@@ -5,12 +5,15 @@ import yaml
 from customtkinter import filedialog as fd
 import os
 from customtkinter import *
+from tkinter import messagebox as mb
 
 ###########################################################################################################################
 ###########################################################################################################################
 
 class youTube(CTK.CTk):
+
     ###########################################################################################################################
+
     def __init__(self):
         super().__init__()
 
@@ -20,10 +23,10 @@ class youTube(CTK.CTk):
         self.geometry('600x100')
         self.title('Python youtube download app')
 
-        self.yamlLabel = CTK.CTkLabel(self,text='MP3/MP4')
+        self.yamlLabel = CTK.CTkLabel(self,text='Media Yaml file')
         self.yamlLabel.grid(row=0,column=0,sticky=NSEW)
 
-        self.yamlString = CTK.StringVar(value='Yaml file location')
+        self.yamlString = CTK.StringVar(value='')
         self.yaml = CTK.CTkEntry(self, textvariable=self.yamlString,state='disabled',width=300)
         self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=NSEW)
 
@@ -38,7 +41,6 @@ class youTube(CTK.CTk):
         self.columnconfigure(0,weight=0)
         self.columnconfigure(1,weight=1)
         self.columnconfigure(2,weight=0)
-
 
     ###########################################################################################################################
 
@@ -57,7 +59,7 @@ class youTube(CTK.CTk):
     ###########################################################################################################################
 
     def read(self):
-        if self.yaml.get()=='Yaml file location' or len(self.yaml.get())==0:
+        if len(self.yaml.get())==0:
             print('Epic fail')
         else:
             with open(self.yaml.get(),'r') as yf:
@@ -70,6 +72,8 @@ class youTube(CTK.CTk):
             for mp4  in data['mp4'].split(' '):
                 if '.com' in mp4:
                     self.download_ytvid_as_mp4(mp4)
+            
+        mb.showinfo(title='Alert',message="Download is completed successfully")
     
     def download_ytvid_as_mp3(self,video_url):
         video_info = youtube_dl.YoutubeDL().extract_info(url = video_url,download=False)
@@ -83,6 +87,8 @@ class youTube(CTK.CTk):
             ydl.download([video_info['webpage_url']])
         print("Download complete... {}".format(filename))
 
+    ###########################################################################################################################
+
     def download_ytvid_as_mp4(self,link):
         try:
             youtubeObject = YouTube(link)
@@ -90,14 +96,12 @@ class youTube(CTK.CTk):
         
             youtubeObject.download()
         except:
-            print("An error has occurred, trying authorization")
+            mb.showerror(title='Alert',message="An error has occurred, trying authorization")
 
             youtubeObject = YouTube(link,use_oauth=True)
             youtubeObject = youtubeObject.streams.get_highest_resolution()
         
             youtubeObject.download()
-
-            print("Download is completed successfully")
 
 
 
