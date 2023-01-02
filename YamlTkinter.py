@@ -20,27 +20,53 @@ class youTube(CTK.CTk):
         CTK.set_appearance_mode('dark')
         CTK.set_default_color_theme('blue')
 
-        self.geometry('600x100')
+        self.geometry('700x200')
         self.title('Python youtube download app')
 
         self.yamlLabel = CTK.CTkLabel(self,text='Media Yaml file')
         self.yamlLabel.grid(row=0,column=0,sticky=NSEW)
 
-        self.yamlString = CTK.StringVar(value='')
+        self.yamlString = CTK.StringVar()
         self.yaml = CTK.CTkEntry(self, textvariable=self.yamlString,state='disabled',width=300)
         self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=NSEW)
 
         self.yamlButton = CTK.CTkButton(self,text='Select file',text_color='red',command=lambda: self.fileLocation(self.yaml))
         self.yamlButton.grid(row=0,column=2,pady=12,padx=10,sticky=NSEW)
 
+        self.pathLabel = CTK.CTkLabel(self,text='Output Path')
+        self.pathLabel.grid(row=1,column=0,sticky=NSEW)
+
+        self.outputPathString = CTK.StringVar()
+        self.outputPath = CTK.CTkEntry(self, textvariable=self.outputPathString,state='disabled',width=300)
+        self.outputPath.grid(row=1,column=1,pady=12,padx=10,sticky=NSEW)
+
+        self.pathButton = CTK.CTkButton(self,text='Select file',text_color='red',command=lambda: self.getPath(self.outputPath))
+        self.pathButton.grid(row=1,column=2,pady=12,padx=10,sticky=NSEW)
+
         self.processButton = CTK.CTkButton(self,text='Process',command = lambda:self.read())
-        self.processButton.grid(row=1,column=1,sticky=NSEW,pady=(0,5))
+        self.processButton.grid(row=2,column=1,sticky=NSEW,pady=(0,5))
 
         self.rowconfigure(0,weight=1)
         self.rowconfigure(1,weight=1)
+        self.rowconfigure(2,weight=1)
         self.columnconfigure(0,weight=0)
         self.columnconfigure(1,weight=1)
         self.columnconfigure(2,weight=0)
+
+    ###########################################################################################################################
+
+    def getPath(self,entry):
+        path = fd.askdirectory()
+
+        if path:
+            entry.configure(state='normal')
+            entry.delete(0,CTK.END)
+            entry.insert(CTK.END,path)
+            entry.configure(state='disabled')
+        else:
+            entry.configure(state='normal')
+            entry.delete(0,CTK.END)
+            entry.configure(state='disabled')
 
     ###########################################################################################################################
 
@@ -59,6 +85,15 @@ class youTube(CTK.CTk):
     ###########################################################################################################################
 
     def read(self):
+
+        if self.yaml.get()=='':
+            mb.showerror(title='Error!',message='Yaml file not selected. Please select Yaml file before processing.')
+            return       
+
+        if self.outputPath.get()=='': 
+            self.outputPath.insert(CTK.END,os.getcwd())
+
+
         if len(self.yaml.get())==0:
             print('Epic fail')
         else:
