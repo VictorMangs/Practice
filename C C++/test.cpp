@@ -4,14 +4,47 @@
 
 using namespace std;
 
+
+//Adding numbers
+int summation(int num1, int num2)
+{
+    return num1+num2;
+}
+
+//Multiplying
+int multiplying(int num1, int num2)
+{
+    return num1*num2;
+}
+
+
+//Testing outputs
 int main()
 {
-    vector<string> msg {"Hello","C++","World","from","VS Code","and the C++ extension!","Wowza!"};
+    vector<int> msg {10,5,16,20,30,25,1};
+    int x {31};
+    int y {10};
+    int sum {0};
 
-    for (const string& word : msg)
+    cout<< "Adding Numbers!"<<endl;
+
+    for (const int& word : msg)
     {
-        cout << word << " ";
+        cout << sum << "+" << word <<"=";
+        sum = summation(sum,word);
+        cout << sum << endl;
+    }
+    
+    cout<< endl << "Multiplying Numbers!"<<endl;
+
+    for (const int& word : msg)
+    {
+        cout << sum << "*" << word <<"=";
+        sum = multiplying(sum,word);
+        cout << sum << endl;
     }
 
-    cout << endl;
+    cout << "Done!" << endl;
 }
+
+
