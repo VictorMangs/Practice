@@ -7,6 +7,7 @@ class Window(tk.Tk):
 
         self.pagenum = 1
         page1()
+        self.grab_set()
 
 
 class page1(tk.Tk):

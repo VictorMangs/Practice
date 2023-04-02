@@ -1,11 +1,12 @@
 import customtkinter as CTK
-import youtube_dl
+import yt_dlp as youtube_dl
 from pytube import YouTube
 import yaml
 from customtkinter import filedialog as fd
 import os
 from customtkinter import *
 from tkinter import messagebox as mb
+import pathlib
 
 ###########################################################################################################################
 ###########################################################################################################################
@@ -26,7 +27,7 @@ class youTube(CTK.CTk):
         self.yamlLabel = CTK.CTkLabel(self,text='Media Yaml file')
         self.yamlLabel.grid(row=0,column=0,sticky=NSEW)
 
-        self.yamlString = CTK.StringVar()
+        self.yamlString = CTK.StringVar(value=pathlib.Path.cwd() / 'PythonScripts' / 'testYaml.yml')
         self.yaml = CTK.CTkEntry(self, textvariable=self.yamlString,state='disabled',width=300)
         self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=NSEW)
 
@@ -99,20 +100,24 @@ class youTube(CTK.CTk):
         else:
             with open(self.yaml.get(),'r') as yf:
                 data = yaml.safe_load(yf)
-                
-            for mp3 in data['mp3'].split(' '):
-                if '.com' in mp3:
-                    self.download_ytvid_as_mp3(mp3)
+
+            for item in data['mp3']:
+                if '.com' in item:
+                    try:
+                        self.download_ytvid_as_mp3(item)
+                    except:
+                        print(item+' download failed')
             
-            for mp4  in data['mp4'].split(' '):
-                if '.com' in mp4:
-                    self.download_ytvid_as_mp4(mp4)
+            for item in data['mp4']:
+                if item:
+                    if '.com' in item:
+                        self.download_ytvid_as_mp4(item)
             
         mb.showinfo(title='Alert',message="Download is completed successfully")
     
     def download_ytvid_as_mp3(self,video_url):
         video_info = youtube_dl.YoutubeDL().extract_info(url = video_url,download=False)
-        filename = f"{video_info['title']}.mp3"
+        filename = f"{video_info['title']}.mp3".replace('/',' ').replace('\"','').replace('#','')
         options={
             'format':'bestaudio/best',
             'keepvideo':False,
