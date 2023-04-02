@@ -4,7 +4,7 @@ import requests
 import os
 from PIL import Image
 
-openai.api_key='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'
+openai.api_key=''
 
 imageDir = os.getcwd()+'\\images'
 
