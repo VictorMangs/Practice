@@ -1,5 +1,0 @@
-customtkinter==5.0.1
-pytube==12.1.2
-pytube3==9.6.4
-PyYAML==6.0
-youtube_dl==2021.12.17

@@ -1,2 +1,0 @@
-# Practice
-Practicing, duh!
