@@ -98,8 +98,9 @@ class youTube(CTK.CTk):
         else:
             with open(self.yaml.get(),'r') as yf:
                 data = yaml.safe_load(yf)
-
+            
             for item in data['mp3']:
+                print(type(item))
                 if item:
                     if '.com' in item:
                         try:
