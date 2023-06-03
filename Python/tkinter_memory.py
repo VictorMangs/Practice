@@ -94,6 +94,25 @@ class TkinterMain(tk.Tk):
             print('No!!! It was actually ' + str(number) + '. Better luck next time!' )
 
 
+def extract_functions(file_path):
+    with open(file_path, 'r') as file:
+        tree = ast.parse(file.read())
+
+    functions = []
+
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.FunctionDef):
+            parameters = [arg.arg for arg in node.args.args]
+            functions.append({"name": node.name, "parameters": parameters})
+        elif isinstance(node, ast.ClassDef):
+            for class_node in ast.iter_child_nodes(node):
+                if isinstance(class_node, ast.FunctionDef):
+                    parameters = [arg.arg for arg in class_node.args.args if arg.arg!='self']
+                    function_name = f"{node.name}.{class_node.name}"
+                    functions.append({"name": function_name, "parameters": parameters})
+
+    return functions
+
 
 app = TkinterMain()
 app.mainloop()

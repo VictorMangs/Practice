@@ -86,46 +86,47 @@ class youTube(CTK.CTk):
     ###########################################################################################################################
 
     def read(self):
+        self.yamlFile = self.yaml.get()
 
-        if self.yaml.get()=='':
+        if self.yamlFile=='':
             mb.showerror(title='Error!',message='Yaml file not selected. Please select Yaml file before processing.')
             return       
 
-        self.saveLoc = self.outputPathString.get().replace('\\','/')
+        self.saveLocation = self.outputPathString.get().replace('\\','/')
 
-        if len(self.yaml.get())==0:
-            print('Epic fail')
-        else:
-            with open(self.yaml.get(),'r') as yf:
-                data = yaml.safe_load(yf)
-            
-            for item in data['mp3']:
-                print(type(item))
-                if item:
-                    if '.com' in item:
-                        try:
-                            self.download_ytvid_as_mp3(item)
-                            # self.simpleMp3(item)
-                        except:
-                            print(item+' mp3 download failed')
-            
-            for item in data['mp4']:
-                if item:
-                    if '.com' in item:
-                        try:
-                            self.download_ytvid_as_mp4(item)
-                        except:
-                            print(item+' mp4 download failed')
-            
+        if len(self.yamlFile)==0:
+            print('No yaml input. Trying default path.')
+            self.yamlFile = pathlib.Path.cwd() / 'Yaml' / 'test_yaml.yml'
+    
+        with open(self.yamlFile,'r') as yf:
+            self.data = yaml.safe_load(yf)
+        
+        for media_type in self.data:
+            for link in self.data[media_type]:
+                if link and (media_type=='mp3'):
+                    try:
+                        self.download_ytvid_as_mp3(link)
+                    except:
+                        print(link+' mp3 download failed')
+                elif link and (media_type=='mp4'):
+                    try:
+                        self.download_ytvid_as_mp4(link)
+                    except:
+                        print(link+' mp4 download failed')
+                        
+    
+        self.cleanup()
         mb.showinfo(title='Alert',message="Download is completed successfully")
     
+    ###########################################################################################################################
+
     def download_ytvid_as_mp3(self,video_url):
         video_info = youtube_dl.YoutubeDL().extract_info(url = video_url,download=False)
         filename = f"{video_info['title']}.mp3".replace('/',' ').replace('\"','').replace('#','')
         options={
             'format':'bestaudio/best',
             'keepvideo':False,
-            'outtmpl':self.saveLoc+'/'+filename,
+            'outtmpl':self.saveLocation+'/'+filename,
         }
         with youtube_dl.YoutubeDL(options) as ydl:
             ydl.download([video_info['webpage_url']])
@@ -136,6 +137,20 @@ class youTube(CTK.CTk):
     def download_ytvid_as_mp4(self,link):
         with youtube_dl.YoutubeDL() as ydl:
             ydl.download([link])
+
+    ###########################################################################################################################
+
+    def cleanup(self):
+        self.data['mp3'] = [None for i in range(len(self.data['mp3']))]
+        self.data['mp4'] = [None for i in range(len(self.data['mp4']))]
+
+        yaml.SafeDumper.add_representer(
+            type(None),
+            lambda dumper, value: dumper.represent_scalar(u'tag:yaml.org,2002:null', '')
+        )
+
+        with open('./Yaml/test_yaml.yml',mode='w') as f:
+                yaml.safe_dump(self.data, f,default_flow_style=False)
 
 if __name__ == '__main__':
     app = youTube()

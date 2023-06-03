@@ -1,38 +1,43 @@
 import ast
 
-class astVisitor(ast.NodeVisitor):
-    def visit_Module(self, node:ast.AST):
-        self.generic_visit(node)
-    
-    def visit_Import(self, node:ast.AST):
-        for imp in node.names:
-            print('Import : '+imp.name)
-        self.generic_visit(node)
 
-    def visit_ImportFrom(self, node:ast.AST):
-        print('From: '+node.module,end=' importing ')
-        print(','.join([item.name for item in node.names]))
-        self.generic_visit(node)
+def extract_functions(file_path):
+    with open(file_path, 'r') as file:
+        tree = ast.parse(file.read())
 
-    def visit_ClassDef(self, node:ast.AST):
-        print('Class: '+node.name)
-        self.generic_visit(node)
+    functions = []
 
-    def visit_FunctionDef(self, node:ast.AST):
-        print('\t Function: '+node.name)
-        self.generic_visit(node)
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.FunctionDef):
+            parameters = [arg.arg for arg in node.args.args]
+            functions.append({"name": node.name, "parameters": parameters})
+        elif isinstance(node, ast.ClassDef):
+            for class_node in ast.iter_child_nodes(node):
+                if isinstance(class_node, ast.FunctionDef):
+                    parameters = [arg.arg for arg in class_node.args.args if arg.arg!='self']
+                    function_name = f"{node.name}.{class_node.name}"
+                    functions.append({"name": function_name, "parameters": parameters})
 
-    def visit_arg(self, node:ast.AST):
-        print('\t Argument: '+node.arg)
-        self.generic_visit(node)
+    return functions
 
-def main(scriptName):
 
-    script = open(scriptName).read()
-    node = ast.parse(script)
-    
-    astVisitor().visit_Module(node)
-
-if __name__=='__main__':
-    script = 'YamlTkinter.py'
-    main(script)
+if __name__ == '__main__':
+    script_path = './Python/tkinter_memory.py'
+    extracted_functions = extract_functions(script_path)
+    used = []
+    with open('./Python/tkinter_memory.md', 'w') as file:
+        file.write("# Extracted Functions:\n\n")
+        for func in extracted_functions:
+            if '.' in func['name']:
+                if func['name'].split('.')[0] in used:
+                    file.write(f">### Function: {func['name'].split('.')[1]}\n")
+                else:
+                    file.write(f"## Class: {func['name'].split('.')[0]}\n")
+                    file.write(f">### Function: {func['name'].split('.')[1]}\n")
+                    used.append(func['name'].split('.')[0])
+            else:
+                file.write(f"## Function: {func['name']}\n\n")
+            if len(func["parameters"])>0:
+                file.write(f">&emsp; **_Parameters:_** {', '.join(func['parameters'])}\n\n")
+            else:
+                file.write("\n\n")
