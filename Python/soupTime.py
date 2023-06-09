@@ -24,5 +24,3 @@ page = requests.get(URL)
 
 soup = BeautifulSoup(page.content, "html.parser")
 getClasses(soup)
-
-
