@@ -27,7 +27,7 @@ class youTube(CTK.CTk):
         self.yamlLabel = CTK.CTkLabel(self,text='Media Yaml file')
         self.yamlLabel.grid(row=0,column=0,sticky=NSEW)
 
-        self.yamlString = CTK.StringVar(value=pathlib.Path.cwd() / 'Yaml' / 'test_yaml.yml')
+        self.yamlString = CTK.StringVar(value=pathlib.Path.cwd() / 'Yaml' / 'mpx.yml')
         self.yaml = CTK.CTkEntry(self, textvariable=self.yamlString,state='disabled',width=300)
         self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=NSEW)
 
@@ -96,7 +96,7 @@ class youTube(CTK.CTk):
 
         if len(self.yamlFile)==0:
             print('No yaml input. Trying default path.')
-            self.yamlFile = pathlib.Path.cwd() / 'Yaml' / 'test_yaml.yml'
+            self.yamlFile = pathlib.Path.cwd() / 'Yaml' / 'mpx.yml'
     
         with open(self.yamlFile,'r') as yf:
             self.data = yaml.safe_load(yf)
@@ -149,7 +149,7 @@ class youTube(CTK.CTk):
             lambda dumper, value: dumper.represent_scalar(u'tag:yaml.org,2002:null', '')
         )
 
-        with open('./Yaml/test_yaml.yml',mode='w') as f:
+        with open('./Yaml/mpx.yml',mode='w') as f:
                 yaml.safe_dump(self.data, f,default_flow_style=False)
 
 if __name__ == '__main__':

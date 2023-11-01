@@ -79,9 +79,6 @@ def new_game():
     game_over = False
     font = pygame.font.Font(None, 36)
 
-    # Restart flag
-    restart = False
-
     # Scoring variables
     score = 0
     score_font = pygame.font.Font(None, 24)
@@ -107,7 +104,6 @@ def new_game():
                 if game_over and event.key == pygame.K_SPACE:
                     # Restart the game
                     game_over = False
-                    restart = True
                     score = 0
                     level = 1
 
@@ -149,7 +145,8 @@ def new_game():
             pygame.display.flip()
             clock.tick(60)
         else:
-            
+            # pygame.time.wait()
+
             player.rect.center = (width // 2, height // 2)
             obstacles.empty()
             
