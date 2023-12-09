@@ -1,0 +1,13 @@
+go mod init <project dir>
+
+go work init
+go work use <project dir>
+
+
+go env -w GO111MODULE=off
+go env -w GO111MODULE=on
+
+run go through powershell
+go mod edit -replace example.com/greetings=../greetings
+
+ctrl+k ctrl+shift+s
