@@ -154,4 +154,5 @@ class youTube(CTK.CTk):
 
 if __name__ == '__main__':
     app = youTube()
-    app.mainloop()
+    # app.mainloop()
+    app.read()

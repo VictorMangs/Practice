@@ -1,37 +1,49 @@
+import pandas as pd
+import time
+import random
 
-import openai
-import requests
-import os
-from PIL import Image
+def corrupt_column(df, column_name):
+    # Corrupt the specified column with random values
+    df[column_name] = [random.uniform(0, 5) for _ in range(df.shape[0])]
+    return df
 
-openai.api_key=''
+def generate_pattern(length):
+    # Generate a random pattern for demonstration purposes
+    return [random.uniform(0, 1) for _ in range(length)]
 
-imageDir = os.getcwd()+'\\images'
+def generate_pandas_table(num_rows, column_names):
+    data = {column: generate_pattern(num_rows) for column in column_names}
+    df = pd.DataFrame(data)
+    return df
 
-if not os.path.isdir(imageDir):
-    os.mkdir(imageDir)
+def save_to_file_and_print(table, filename):
+    table.to_csv(filename, index=False)  # Change to .to_excel if you want to save as Excel
+    print(f"Table saved to {filename}")
 
-#print(f"{imageDir=}")
+def print_pandas_table():
+    num_rows = 5
+    column_names = [f"Column{i + 1}" for i in range(3)]  # Adjust the number of columns as needed
 
+    while True:
+        table = generate_pandas_table(num_rows, column_names)
+        print(table,end="\n\n")
 
-prompt = "Superman saving the earth from an asteroid,digital art"
+        # Prompt the user to press a button to corrupt a column
+        user_input = input("Press 'c' to corrupt a column, 'q' to quit, and any other key to continue : ")
+        if user_input.lower() == 'c':
+            column_to_corrupt = random.choice(column_names)
+            table = corrupt_column(table, column_to_corrupt)
+            print(f"Column '{column_to_corrupt}' corrupted!")
 
+            print(table,end="\n\n")
 
-generation_response = openai.Image.create(
-    prompt=prompt,
-    n=1,
-    size="1024x1024",
-    response_format="url",)
+        elif user_input.lower() == 'q':
+            print("Exiting the loop. Goodbye!")
+            break
 
-#print(generation_response)
+        # Wait for 20 seconds before printing the next table
+        save_to_file_and_print(table, "data.csv")
+        time.sleep(5)
 
-generated_image_name = "generated_image.png"
-generated_image_filepath = os.path.join(imageDir, generated_image_name)
-generated_image_url = generation_response["data"][0]["url"]
-generated_image = requests.get(generated_image_url).content
-
-with open(generated_image_filepath, "wb") as image_file:
-    image_file.write(generated_image)  # write the image to the file
-
-#print(generated_image_filepath)
-#display(Image.open(generated_image_filepath))
+if __name__ == "__main__":
+    print_pandas_table()

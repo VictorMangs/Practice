@@ -1,10 +1,1 @@
-data:
-  key1: "{{var1}}"
-  key2: "{{var2}}"
-  nested:
-    - "{{var1}}"
-    - "{{var2}}"
-    - "{{var3}}"
-  list_with_strings:
-    - "Value: {{var1}}"
-    - "Value: {{var2}}"
+

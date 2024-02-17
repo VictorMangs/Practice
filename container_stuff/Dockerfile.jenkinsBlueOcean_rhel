@@ -1,0 +1,8 @@
+FROM jenkins/jenkins:rhel-ubi9-jdk17
+USER root
+# RUN yum -y update && yum install -y redhat-lsb
+# RUN yum -y update && yum config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo && yum install -y docker-ce-cli
+RUN yum install -y podman
+RUN chown -R 1000:1000 "$JENKINS_HOME" && echo "alias docker=podman" >> /etc/bashrc
+USER jenkins
+RUN jenkins-plugin-cli --plugins "blueocean docker-workflow"

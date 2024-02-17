@@ -1,0 +1,12 @@
+numpy
+pandas
+packaging
+customtkinter
+beautifulsoup4
+PyYaml
+yt-dlp
+opencv-python
+PyMuPDF
+torch
+torchvision
+tensorflow

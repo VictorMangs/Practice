@@ -1,0 +1,10 @@
+style {
+    color:azure;
+    display:block;
+    border: 1px solid;
+    font: inherit;
+    font-family: monospace;
+    padding: 1em;
+    border-radius: 1em;
+    white-space: pre;
+  }

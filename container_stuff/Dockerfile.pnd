@@ -1,0 +1,29 @@
+# Use the UBI 8 base image
+FROM registry.access.redhat.com/ubi8:latest
+
+USER root
+
+# Install necessary packages for Docker
+RUN yum install -y podman \
+    fuse-overlayfs \
+    && yum clean all
+    
+# RUN yum config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo \
+#     && yum update -y \
+#     && yum install -y \
+#     yum-utils \
+#     device-mapper-persistent-data \
+#     lvm2 \
+#     docker-ce \
+#     && systemctl start docker \
+#     && systemctl enable docker \
+#     && yum clean all
+
+# Expose Podman socket
+EXPOSE /run/user/1000/podman/podman.sock
+
+# Expose Docker daemon port
+EXPOSE 2375
+
+# Start Docker daemon
+# CMD ["dockerd", "--host=0.0.0.0", "--storage-driver=overlay2"]
