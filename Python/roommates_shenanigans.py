@@ -1,6 +1,4 @@
-# Laina Posner
-# VT, ECE 5444
-# HW 4, the Pavlidis contour extractor, the Gauss area estimation method and Discrete Curve Evolution
+# the Pavlidis contour extractor, the Gauss area estimation method and Discrete Curve Evolution
 
 from contextlib import nullcontext
 import os
