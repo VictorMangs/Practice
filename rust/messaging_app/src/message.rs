@@ -1,14 +1,10 @@
-// src/message.rs
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum Message {
-    Join { username: String },
     Chat { from: String, text: String },
     Private { from: String, to: String, text: String },
-    ListRequest,
-    ListResponse { users: Vec<String> },
-    Help,
     System { text: String },
+    Command { name: String, args: Vec<String> },
 }
