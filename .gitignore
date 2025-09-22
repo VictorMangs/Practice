@@ -1,1 +1,5 @@
 **/data
+target/
+__pycache__/
+*.py[cod]
+c_code

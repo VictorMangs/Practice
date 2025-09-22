@@ -27,7 +27,7 @@ class youTube(CTK.CTk):
         self.yamlLabel = CTK.CTkLabel(self,text='Media Yaml file')
         self.yamlLabel.grid(row=0,column=0,sticky=NSEW)
 
-        self.yamlString = CTK.StringVar(value=pathlib.Path.cwd() / 'yaml' / 'mpx.yml')
+        self.yamlString = CTK.StringVar(value=pathlib.Path(__file__).parent.parent / 'yaml' / 'mpx.yml')
         self.yaml = CTK.CTkEntry(self, textvariable=self.yamlString,state='disabled',width=300)
         self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=NSEW)
 

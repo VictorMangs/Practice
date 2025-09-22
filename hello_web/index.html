@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Index</title>
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="Index" />
+    <link rel="stylesheet" href="./index.css" >
+  </head>
+  <body>
+    <!-- <label class="hamburger-menu">
+      <input type="checkbox" />
+    </label> -->
+    <div class="sidebar">
+        
+        <div class="top">
+            <div class="logo">
+                <img src="nebula.png" alt="nebula" width="30px" height="30px" />
+                <span>Code Testing</span>
+            </div>
+            <img src="menu.webp" width="40px" height="40px" id="btn" />
+        </div>
+
+        <div class="user">
+            <img class="usr-img" src="panda.png" alt="panda" width="50px" height="50px" />
+            <p class="bold">Panda Man</p>
+            <p>Admin</p>
+        </div>
+        
+        <ul>
+            <li>
+                <a href="#">
+                <img src="codesandbox.svg" />
+                <span class="nav-item">Sidebar</span>
+                </a>
+                <span class="tooltip">Sidebar</span>
+            </li>
+
+            <li>
+                <a href="./navigation.html">
+                <img src="codesandbox.svg" />
+                <span class="nav-item">Navigation</span>
+                </a>
+                <span class="tooltip">Navigation</span>
+            </li>
+
+            <li>
+                <a href="./welcome.html">
+                <img src="codesandbox.svg" />
+                <span class="nav-item">Welcome</span>
+                </a>
+                <span class="tooltip">Welcome</span>
+            </li>
+
+
+            <li>
+                <a href="https://www.google.com">
+                <img src="codesandbox.svg" />
+                <span class="nav-item">Google</span>
+                </a>
+                <span class="tooltip">Google</span>
+            </li>
+
+            <li>
+                <a href="https://www.youtube.com/watch?v=wYpCWwD1oz0">
+                <img src="codesandbox.svg" />
+                <span class="nav-item">React</span>
+                </a>
+                <span class="tooltip">React</span>
+            </li>
+            
+        </ul>
+        
+    </div>
+
+    <div class="main-content">
+        <div class="container">
+            <h1>MMM Whatchyasaayyyy</h1>
+        </div>
+    </div>
+
+  </body>
+
+  <script>
+    let btn = document.querySelector("#btn");
+    let sidebar = document.querySelector(".sidebar");
+
+    btn.onclick = function() {
+        sidebar.classList.toggle('active');
+    };
+  </script>
+</html>

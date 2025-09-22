@@ -1,0 +1,41 @@
+*,
+*::after,
+*::before {
+  box-sizing: border-box;
+}
+
+body {
+  background: rgb(171, 205, 255);
+  margin: 0;
+}
+
+svg rect {
+  fill: #333;
+  transition: transform 0.3s ease; /* Smooth transition for the animation */
+}
+
+svg rect {
+  transform-origin: 50% 50%;
+}
+
+svg:hover {
+  animation: shake 0.5s ease; /* Apply the shake animation on click */
+}
+
+@keyframes shake {
+    10%, 90% {
+        transform: translate3d(-1px, 0, 0);
+      }
+      
+      20%, 80% {
+        transform: translate3d(2px, 0, 0);
+      }
+    
+      30%, 50%, 70% {
+        transform: translate3d(-4px, 0, 0);
+      }
+    
+      40%, 60% {
+        transform: translate3d(4px, 0, 0);
+      }
+}

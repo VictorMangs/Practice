@@ -1,11 +1,11 @@
 package main
 
 import (
-    "archive/zip"
-    "io"
-    "log"
-    "os"
-    "path/filepath"
+	"archive/zip"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
 )
 
 func zipSource(source, target string) error {
@@ -65,7 +65,7 @@ func zipSource(source, target string) error {
 }
 
 func main() {
-    if err := zipSource("testFolder", "testFolder.zip"); err != nil {
+    if err := zipSource("testFolder", "../../testFolder.zip"); err != nil {
         log.Fatal(err)
     }
     if err := zipSource("testFolder/1/1.1/1.1.txt", "1.1.zip"); err != nil {
