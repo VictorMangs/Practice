@@ -1,0 +1,6 @@
+[2025-10-06 08:32:12] Server running on 0.0.0.0:8080
+[2025-10-06 08:32:12] Discovery listening on UDP 8888
+[2025-10-06 08:32:29] Client connected: 192.168.1.192:54618
+[2025-10-06 08:32:29] bob joined
+[2025-10-06 08:32:30] bob sent invalid JSON
+[2025-10-06 08:34:40] bob left

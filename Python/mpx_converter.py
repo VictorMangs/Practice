@@ -135,7 +135,17 @@ class youTube(CTK.CTk):
     ###########################################################################################################################
 
     def download_ytvid_as_mp4(self,link):
-        with youtube_dl.YoutubeDL() as ydl:
+        options = {
+        'format': 'bestvideo+bestaudio/best', # Select best quality video and audio, then merge
+        'merge_output_format': 'mp4',        # Merge into an MP4 file
+        # 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'), # Output template
+        'noplaylist': True,                   # Ensure only single video is downloaded if a playlist URL is provided
+        # 'progress_hooks': [my_hook],          # Add a progress hook (optional)
+        'external_downloader': 'ffmpeg',      # Specify ffmpeg as external downloader for merging
+        'external_downloader_args': ['-loglevel', 'panic'] # Optional: suppress ffmpeg output
+        }
+
+        with youtube_dl.YoutubeDL(options) as ydl:
             ydl.download([link])
 
     ###########################################################################################################################

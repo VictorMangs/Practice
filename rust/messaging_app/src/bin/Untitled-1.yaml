@@ -1,0 +1,68 @@
+bin: podman
+container_dir: /path/to/image/dockerfiles/container
+package_dir: /path/to/packages/image/package
+dry_run: False
+image_context: /path/to/my/image_context
+
+project: Omega
+
+Omega:
+  # Required images usually podman pulled/loaded depending on (remote/local location key)
+  required_images:
+    ubi: 
+      remote_location: my_nexus.domain.com:8779/main/ubi:9.6
+    custom1:
+      remote_location: my_nexus.domain.com:8779/main/custom1:latest
+    custom2:
+      remote_location: my_nexus.domain.com:8779/main/custom2:latest
+
+  # Built on top of required images
+  base_images:
+    base1:
+      parent: ubi
+      category: base
+    base2:
+      parent: custom1
+      category: base
+    base3:
+      parent: custom2
+      category: base
+    base4:
+      parent: custom2
+      category: base
+
+  components:
+    component1:
+      parent: base1
+      category: 
+        - component
+        - frontend
+    component2:
+      parent: base1
+      category: 
+        - component
+        - frontend
+    component3:
+      parent: base3
+      category: 
+        - component
+        - backend
+    component4:
+      parent: base2
+      category: 
+        - component
+        - backend
+    component5:
+      parent: base4
+      category: 
+        - component
+        - backend
+  
+  commands:
+    yum:
+      - cp /etc/yum.conf
+      - cp /etc/yum.repos.d/*.repo
+    etc:
+      - cp /etc/pki/tls/certs/*.crt 
+    component4:
+      - mkdir -p {} {image_context}
