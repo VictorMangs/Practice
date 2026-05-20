@@ -1,0 +1,9 @@
+{
+  "src\\App.txt": "src\\App.tsx",
+  "src\\main.txt": "src\\main.tsx",
+  "src\\components\\Dropzone.txt": "src\\components\\Dropzone.tsx",
+  "src\\components\\FileNode.txt": "src\\components\\FileNode.tsx",
+  "src\\components\\FileTree.txt": "src\\components\\FileTree.tsx",
+  "src\\components\\ValidationBadge.txt": "src\\components\\ValidationBadge.tsx",
+  "src\\components\\ValidationSummary.txt": "src\\components\\ValidationSummary.tsx"
+}

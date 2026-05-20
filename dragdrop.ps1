@@ -1,0 +1,1504 @@
+#########################################################
+## For testing (replace official paths with local paths)
+# 1. Comment out FileLogPath, FileLogName, UploadsRoot, and CyberRoot in main code
+# 2. Uncomment the code block below 
+# 3. Happy testing!
+
+# function Ensure-Path {
+#     [CmdletBinding()]
+#     param (
+#         [Parameter(Mandatory, Position = 0)]
+#         [string]$Path
+#     )
+
+#     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+#         # -Force creates any missing parent directories as well
+#         New-Item -Path $Path -ItemType Directory -Force | Out-Null
+#         Write-Verbose "Created folder: $Path"
+#     }
+#     else {
+#         Write-Verbose "Folder already exists: $Path"
+#     }
+# }
+
+# $script:FileLogPath = "$PSScriptRoot\log"
+# $script:FileLogName = "TransferLog.csv"
+# $script:UploadsRoot = "$PSScriptRoot\Uploads"
+# $script:CyberRoot = "$PSScriptRoot\Cyber"
+
+# Ensure-Path $FileLogPath
+# Ensure-Path $UploadsRoot
+# Ensure-Path $CyberRoot
+
+#########################################################
+
+Add-Type -AssemblyName System.Windows.Forms
+$scriptPath = Join-Path $PSScriptRoot 'Get-Filetype.ps1'
+. $scriptPath
+$script:FileLogPath = "\\regularShare\DropBox\Public\Transfer_Tool\log"
+$script:FileLogName = "TransferLog.csv"
+$script:UploadsRoot = "\\regularShare\DropBox\Public\Uploads"
+$script:CyberRoot = "\\Share01\sp\Restricted_Cybersecurity\Public\File Transfer\Transfer Requests"
+$script:strNetworkPath = $script:UploadsRoot # Default to uploads root
+$script:BaseRoot = Split-Path -Parent $script:strNetworkPath
+$Script:NameSpaceCharReplacement = ""
+$script:TransferMode = 'Normal'   # fallback if the user never uses the dialog
+
+$script:AllowedFileTypes = Import-Csv (
+    Join-Path $PSScriptRoot 'AllowedFileTypes.csv'
+)
+
+$script:Messages = Import-Csv (
+    Join-Path $PSScriptRoot 'Messages.csv'
+)
+
+
+function Get-UserInformation() {
+    # Get current user and the date
+
+    $UserinfoObject = [PSCustomObject]@{
+        FirstName = ""
+        LastName = ""
+        MyID = ""
+    }
+
+    # Try to gather user info from Active Directory
+    try {
+        $username = [System.Environment]::UserName
+        $user = (([adsisearcher]"(&(objectCategory=User)(samaccountname=$username))").findall()).properties
+        $UserinfoObject.FirstName = $user.givenname
+        $UserinfoObject.LastName = $user.sn
+        $UserinfoObject.MyID = $user.employeenumber.ToLower()
+    } catch {
+        # Error retrieving AD info, fallback to manual inputs
+        $inputData = Show-InputBox
+
+        # Validate input data before assigning
+        if ($inputData.Count -ne 3 -or $inputData -contains "") {
+            [System.Windows.Forms.MessageBox]::Show("All fields are required. Please try again.", "Input Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Exclamation)
+            return
+        }
+
+        $UserinfoObject.MyID = $inputData[0]
+        $UserinfoObject.FirstName = $inputData[1]
+        $UserinfoObject.LastName = $inputData[2]
+    }
+    
+    # Spaces in names are problematic.
+    if ($UserinfoObject.FirstName -like "* *"){
+        $UserinfoObject.FirstName = $UserinfoObject.FirstName.replace(" ",$NameSpaceCharReplacement)
+    }
+    if ($UserinfoObject.LastName -like "* *"){
+        $UserinfoObject.LastName = $UserinfoObject.LastName.replace(" ",$NameSpaceCharReplacement)
+    }
+
+    return $UserinfoObject
+}
+
+function Show-DragAndDropWindow {
+    # Create the Windows Form
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Transfer Dropbox"
+    $form.Size = New-Object System.Drawing.Size(980, 600)
+    $form.MinimumSize = New-Object System.Drawing.Size(800,500)
+    $form.StartPosition = 'CenterScreen'
+
+    # Instructions label
+    $Instructions = New-Object System.Windows.Forms.Label
+    $Instructions.Text = "Drag and Drop files or folders into this window and click Transfer when done."
+    $Instructions.Font = New-Object System.Drawing.Font([System.Drawing.FontFamily]::GenericSansSerif, 14)
+    $Instructions.AutoSize = $true
+    $Instructions.Location = New-Object System.Drawing.Point(16, 20)
+    $form.Controls.add($Instructions)
+
+    # Create an ImageList to hold icons for files and folders
+    $imageList = New-Object System.Windows.Forms.ImageList
+    $WarningIcon = [System.Drawing.SystemIcons]::Warning.ToBitmap()
+    $ErrorIcon = [System.Drawing.SystemIcons]::Error.ToBitmap()
+    $folderIcon = [System.Drawing.SystemIcons]::Application.ToBitmap()
+    $DefaultfileIcon = [System.Drawing.SystemIcons]::Application.ToBitmap()
+    $CyberIcon = [System.Drawing.SystemIcons]::Shield.ToBitmap()
+    
+    $imageList.Images.Add("Folder", $folderIcon)
+    $imageList.Images.Add("Warning", $WarningIcon)
+    $imageList.Images.Add("Error", $ErrorIcon)
+    $imageList.Images.Add("DefaultFile", $DefaultfileIcon)
+    $imageList.Images.Add("CyberOnly", $CyberIcon)
+    
+    # Create a TreeView to display the hierarchical structure
+    $treeView = New-Object System.Windows.Forms.TreeView
+
+    # Anchor treeView to top, bottom, left and right to scale it
+    $treeView.Anchor = 'Top, Bottom, Left, Right'
+    $treeView.Scrollable = $true
+    $treeView.CheckBoxes = $true
+    $treeView.ImageList = $imageList
+    $treeView.ShowNodeToolTips = $true
+    $treeView.Location = New-Object System.Drawing.Point(20, 50)
+    $treeView.size = New-Object System.Drawing.Point(600, 440)
+    $treeView.Name = "Tree1"
+
+    # Adjust the tooltip timing parameters for the entire application
+    $tooltip = New-Object System.Windows.Forms.ToolTip
+    $tooltip.AutoPopDelay = 99999999  # Tooltip will stay visible for a very long time
+    $tooltip.InitialDelay = 0         # Tooltip appears immediately
+    $tooltip.ReshowDelay = 0          # Tooltip redisplays immediately
+
+    # Event handler to automatically reset tooltip
+    $script:lastTooltipNode = $null
+
+    $treeView.Add_MouseMove({
+
+        $node = $treeView.GetNodeAt(
+            $treeView.PointToClient(
+                [System.Windows.Forms.Cursor]::Position
+            )
+        )
+
+        if ($node -ne $script:lastTooltipNode) {
+
+            $tooltip.Hide($treeView)
+
+            if ($null -ne $node -and
+                -not [string]::IsNullOrWhiteSpace($node.ToolTipText)) {
+
+                $tooltip.Show(
+                    $node.ToolTipText,
+                    $treeView,
+                    20,
+                    20,
+                    $tooltip.AutoPopDelay
+                )
+            }
+
+            $script:lastTooltipNode = $node
+        }
+    })
+
+    $form.Controls.Add($treeView)
+
+    # -------------------------------------------------
+    # FlowLayoutPanel holds all buttons
+    # -------------------------------------------------
+    $buttonBar = New-Object System.Windows.Forms.TableLayoutPanel
+    $buttonBar.Dock = [System.Windows.Forms.DockStyle]::Bottom # sticks to the bottom edge
+    $buttonBar.Height = 45 # fixed height
+    $buttonBar.RowCount = 1
+    $buttonBar.ColumnCount = 3
+
+    # column 0
+    $buttonBar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    
+    # column 1
+    $buttonBar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent),100))
+    
+    # column 2
+    $buttonBar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+
+    $form.Controls.Add($buttonBar) # add the bar to the form
+
+    # -------------------------------------------------
+    # Create a uniformly‑sized button
+    # -------------------------------------------------
+    function New-StandardButton {
+        param(
+            [string]$Text,
+            [scriptblock]$OnClick,
+            [int]$Width = 130,
+            [int]$Height = 35
+        )
+        $b = New-Object System.Windows.Forms.Button
+        $b.Text = $Text
+        $b.Size = New-Object System.Drawing.Size($Width,$Height)
+        $b.Margin = New-Object System.Windows.Forms.Padding(10,0,0,0) # margin for left (same as transfer button)
+        if ($OnClick) { $b.Add_Click($OnClick) }
+        return $b
+    }
+
+    # -------------------------------------------------
+    # Create the four buttons
+    # -------------------------------------------------
+    $removeButton = New-StandardButton -Text 'Remove Selected Items' -OnClick {
+        $checkedNodes = New-Object System.Collections.ArrayList
+        function Get-CheckedNodes {
+            param($node)
+            if ($node.Checked) { [void]$checkedNodes.Add($node) }
+            foreach ($c in $node.Nodes) { Get-CheckedNodes $c }
+        }
+        foreach ($n in $treeView.Nodes) { Get-CheckedNodes $n }
+        foreach ($n in $checkedNodes) { $n.Remove() }
+    }
+
+    $removeAllBadButton = New-StandardButton -Text 'Remove All Unapproved' -OnClick {
+        $msg = "Are you sure you want to remove every file that is marked as unapproved from this transfer session (shown by the red x icons)?"
+        $result = [System.Windows.Forms.MessageBox]::Show(
+                    $msg,
+                    'Confirm bulk removal',
+                    [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning)
+
+        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+            Remove-UnapprovedNodes -TreeView $treeView
+            [System.Windows.Forms.MessageBox]::Show(
+                'Successfully removed all unapproved items from this transfer session.',
+                'Done',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    }
+
+    $clearButton = New-StandardButton -Text 'Clear' -OnClick {
+        Clear-TreeView -treeView $treeView
+    }
+
+    $transferButton = New-StandardButton -Text 'Transfer'
+
+    $leftFlow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $leftFlow.FlowDirection = 'LeftToRight'
+    $leftFlow.WrapContents = $false
+    $leftFlow.AutoSize = $true
+    $leftFlow.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $leftFlow.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
+    $buttonBar.Controls.Add($leftFlow,0,0)
+
+    $leftFlow.Controls.AddRange(@($removeButton,$removeAllBadButton,$clearButton))
+
+    # Remove any static margin
+    $transferButton.Margin = [System.Windows.Forms.Padding]::new(0, 0, 10, 0)
+    $buttonBar.Controls.Add($transferButton,2,0)
+
+    # Show the warning message when the form loads
+    $form.Add_Shown({
+        Show-WarningMessage -Parentformwidth $($form.Width) -message "Please be aware that this script currently does not provide any feedback for failed transfers. Please read the NGRN File Transfer User Guide closely to obtain the file extensions and file types that are allowed to be transferred using this method."
+        Show-WarningMessage -Parentformwidth $($form.Width) -message "Please be aware that files copied to the transfer folder are removed after a transfer attempt and are not recoverable. Please retain your local files until you have verified the transfer is complete."
+    })
+
+    # Create the panel
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Location = New-Object System.Drawing.Point((($treeView.right) + 130) ,  50)
+    $panel.AutoSize = $true
+    $panel.BackColor = [System.Drawing.SystemColors]::Control
+    $panel.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $panel.Anchor = 'Right, Top'
+
+    $panelNATS = New-Object System.Windows.Forms.Panel
+    $panelNATS.Location = New-Object System.Drawing.Point((($treeView.right) + 130) ,  200)
+    $panelNATS.AutoSize      = $true
+    $panelNATS.AutoSizeMode  = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
+    $panelNATS.BackColor     = [System.Drawing.SystemColors]::Control
+    $panelNATS.BorderStyle   = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $panelNATS.Anchor        = 'Right, Top'
+
+    # Set the font
+    $font = New-Object System.Drawing.Font([System.Drawing.FontFamily]::GenericSansSerif, 9)
+
+    # Create the labels and text boxes
+    $checkbox = New-Object System.Windows.Forms.CheckBox
+    $checkbox.Location = New-Object System.Drawing.Point(10, 10)
+    $checkbox.Text = 'Send Files To Different user'
+    $checkbox.checked = $false
+    $checkbox.Font = $font
+    $checkbox.autosize = $true
+
+    $checkboxNATS = New-Object System.Windows.Forms.CheckBox
+    $checkboxNATS.Location = New-Object System.Drawing.Point(10, 10)   # top‑left inside its panel
+    $checkboxNATS.Text     = 'NATS Cyber'
+    $checkboxNATS.Checked  = $false
+    $checkboxNATS.Font     = $font
+    $checkboxNATS.AutoSize = $true
+
+    $labelFirstName = New-Object System.Windows.Forms.Label
+    $labelFirstName.Text = 'First Name:'
+    $labelFirstName.Location = New-Object System.Drawing.Point(10, 40)
+    $labelFirstName.Font = $font
+    $labelFirstName.AutoSize = $true
+
+    $textBoxFirstName = New-Object System.Windows.Forms.TextBox
+    $textBoxFirstName.Location = New-Object System.Drawing.Point(130, 40)
+    $textBoxFirstName.Size = New-Object System.Drawing.Size(180, 20)
+    $textBoxFirstName.Font = $font
+    $textBoxFirstName.enabled = $false
+
+    $labelLastName = New-Object System.Windows.Forms.Label
+    $labelLastName.Text = 'Last Name:'
+    $labelLastName.Location = New-Object System.Drawing.Point(10, 60)
+    $labelLastName.Font = $font
+    $labelLastName.AutoSize = $true
+
+    $textBoxLastName = New-Object System.Windows.Forms.TextBox
+    $textBoxLastName.Location = New-Object System.Drawing.Point(130, 60)
+    $textBoxLastName.Size = New-Object System.Drawing.Size(180, 20)
+    $textBoxLastName.Font = $font
+    $textBoxLastName.Enabled = $false
+
+    $labelMyID = New-Object System.Windows.Forms.Label
+    $labelMyID.Text = 'My ID: i.e. A12345'
+    $labelMyID.Location = New-Object System.Drawing.Point(10, 80)
+    $labelMyID.Font = $font
+    $labelMyID.AutoSize = $true
+
+    $textBoxMyID = New-Object System.Windows.Forms.MaskedTextBox
+    $textBoxMyID.Location = New-Object System.Drawing.Point(130, 80)
+    $textBoxMyID.Size = New-Object System.Drawing.Size(180, 20)
+    $textBoxMyID.Font = $font
+    $textBoxMyID.mask = "L00000"
+    $textBoxMyID.Enabled = $false
+
+    # Fill in information for text boxes
+    $Userinformation = Get-UserInformation
+    $textBoxMyID.text = $Userinformation.MyID
+    $textBoxLastName.text = $Userinformation.LastName
+    $textBoxFirstName.text = $Userinformation.FirstName
+
+    $warningPanel = New-Object System.Windows.Forms.Panel
+    $warningPanel.AutoSize      = $true
+    $warningPanel.AutoSizeMode  = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
+    $warningPanel.Location      = New-Object System.Drawing.Point(10, 35)
+    $warningPanel.BackColor     = [System.Drawing.Color]::FromArgb(255,255,248,220)
+    $warningPanel.BorderStyle   = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    # Warning text for nats cyber checkbox
+    $warningText = New-Object System.Windows.Forms.Label
+    $warningText.Text = "Select this checkbox to initiate the manual Cyber transfer process for file types that are not NATS allowed but are allowed via NG Cyber (shield icon).  Any unapproved (by either NATS or NG Cyber) file types (red X icon) must be processed through your program ISSO/ISSM."
+    $warningText.Font    = $font
+    $warningText.AutoSize = $true
+    $warningText.Location = New-Object System.Drawing.Point(
+                                $warningIcon.Right + 5, 5)   # a little space after the icon
+    $warningText.MaximumSize = New-Object System.Drawing.Size(260,0)   # wrap long text
+
+    # Assemble the warning panel
+    $warningPanel.Controls.Add($warningText)
+
+    # Add controls to the panel
+    $panel.Controls.Add($labelFirstName)
+    $panel.Controls.Add($textBoxFirstName)
+    $panel.Controls.Add($labelLastName)
+    $panel.Controls.Add($textBoxLastName)
+    $panel.Controls.Add($labelMyID)
+    $panel.Controls.Add($textBoxMyID)
+    $panel.Controls.Add($checkbox)
+
+    $panelNATS.Controls.Add($checkboxNATS)
+    $panelNATS.Controls.Add($warningPanel)
+
+    # Add the panel to the form
+    $form.Controls.Add($panel)
+    $form.Controls.Add($panelNATS)
+
+    # Add an event handler for the CheckedChanged event
+    $checkbox.add_CheckedChanged({
+        if ($checkbox.Checked) {
+            # Perform actions when the checkbox is checked
+            $textBoxFirstName.enabled = $true
+            $textBoxLastName.enabled = $true
+            $textBoxMyID.enabled = $true
+        } else {
+            # Perform actions when the checkbox is unchecked
+            #fill in information for text boxes
+            $Userinformation = Get-UserInformation
+            $textBoxMyID.text = $Userinformation.MyID
+            $textBoxLastName.text = $Userinformation.LastName
+            $textBoxFirstName.text = $Userinformation.FirstName
+            $textBoxFirstName.enabled = $false
+            $textBoxLastName.enabled = $false
+            $textBoxMyID.enabled = $false
+        }
+    })
+
+    # Define the function to be called on button click
+    function btnSubmit_OnClick {
+
+        # -------------------------------------------------
+        # Get all nodes (leaf‑only) from the tree
+        # -------------------------------------------------
+        function Get-AllNodes($treenode) {
+            $treeNode
+            foreach ($childNode in $treenode.Nodes) {
+                Get-AllNodes $childNode
+            }
+        }
+        $NodesToTransfer = Get-AllNodes $treeview
+        if (@($NodesToTransfer).Count -eq 0){
+            return
+        }
+
+        $AllnodesInTree = Get-AllNodes $treeview
+
+        # -------------------------------------------------
+        # No longer filter by Approved mode – keep the full set
+        # -------------------------------------------------
+        $NodesToTransfer = $AllnodesInTree
+
+        try {
+            # -------------------------------------------------
+            # Verify the network share is reachable
+            # -------------------------------------------------
+            if (-Not (Test-Path -Path $script:strNetworkPath)) {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "The network folder $script:strNetworkPath is not reachable. Please check your network connection.",
+                    "Network Error",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error)
+                return
+            }
+
+            $strDate = Get-Date -Format "yyyy-MM-dd-HHmmss"
+
+            # -------------------------------------------------
+            # Ensure required user fields are populated
+            # -------------------------------------------------
+            if ($TextBoxMyID.text -eq "" -or $TextBoxLastName.text -eq "" -or $TextBoxFirstName.text -eq ""){
+                $Userinformation = Get-UserInformation
+                $textBoxMyID.text = $Userinformation.MyID
+                $textBoxLastName.text = $Userinformation.LastName
+                $textBoxFirstName.text = $Userinformation.FirstName
+            }
+
+            # -------------------------------------------------
+            # Normalize spaces and lower‑case ID
+            # -------------------------------------------------
+            if ($textBoxFirstName.text -like "* *"){
+                $textBoxFirstName.text = $textBoxFirstName.text.replace(" ",$NameSpaceCharReplacement)
+            }
+            if ($textBoxLastName.text -like "* *"){
+                $textBoxLastName.text = $textBoxLastName.text.replace(" ",$NameSpaceCharReplacement)
+            }
+            $textBoxMyID.text = ($textBoxMyID.text).ToLower()
+
+            # -------------------------------------------------
+            # Build the target folder (Uploads or Cyber, depending on $script:TransferMode)
+            # -------------------------------------------------
+            $strFolder = "$script:strNetworkPath\$($textBoxMyID.text)_$($textBoxLastName.text)_$($textBoxFirstName.text)_$strDate"
+
+            if ($script:TransferMode -ne 'Cyber') {
+                $cyberOnly = Get-CyberOnlyNodes -TreeView $treeView
+                if ($cyberOnly.Count -gt 0) {
+                    [System.Windows.Forms.MessageBox]::Show(
+                        "One or more files are marked as cyber-only (shield icon). They cannot be transferred regularly.`n`n" +
+                        "Remove them or check the NATS Cyber checkbox to send all files to Cyber for processing.",
+                        "Transfer blocked",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information)
+                    return   # abort only the normal transfer
+                }
+            }
+            # -------------------------------------------------
+            # Build the backup folder (sibling of Uploads / Cyber)
+            # -------------------------------------------------
+            $script:BaseRoot = Split-Path -Parent $script:strNetworkPath
+            
+            $backupFolder = Join-Path -Path $script:BaseRoot -ChildPath "Transfer_Backups"
+            if (-Not (Test-Path -Path $script:BaseRoot)) {
+                Write-Host "Creating folder: $script:BaseRoot"
+                New-Item -ItemType Directory -Path $script:BaseRoot | Out-Null
+            }
+            if (-Not (Test-Path -Path $backupFolder)) {
+                Write-Host "Creating folder: $backupFolder"
+                New-Item -ItemType Directory -Path $backupFolder | Out-Null
+            }
+            $backupPath = Join-Path -Path $backupFolder -ChildPath "$($textBoxMyID.text)_$($textBoxLastName.text)_$($textBoxFirstName.text)_$strDate"
+
+            # -------------------------------------------------
+            # Ensure both destination folders exist
+            # -------------------------------------------------
+            if (-not (Test-Path -Path $strFolder)) {
+                New-Item -ItemType Directory -Force -Path $strFolder | Out-Null
+                Write-Host "Created target folder: $strFolder"
+            }
+            if (-not (Test-Path -Path $backupPath)) {
+                New-Item -ItemType Directory -Force -Path $backupPath | Out-Null
+                Write-Host "Created backup folder: $backupPath"
+            }
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                "An error occurred: $_",
+                "Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
+
+        # -------------------------------------------------
+        # Copy the files (normal or cyber)
+        # -------------------------------------------------
+
+        # Normal / Cyber – copy the whole tree (no filtering)
+        Copy-TreeViewData -treeView $form.Controls["Tree1"] -strFolder $strFolder -bolWriteLog:$true
+        Copy-TreeViewData -treeView $form.Controls["Tree1"] -strFolder $backupPath -bolWriteLog:$false
+
+        if ($script:TransferMode -eq 'Cyber') {
+            Show-WarningMessage -message "Your transfer has been sent to cyber.  Transfer requests are processed at 8am/1pm/4pm PST. You can expect to receive your file within one hour of the applicable transfer time." -Parentformwidth $($form.Width)
+        } else {
+            Show-WarningMessage -message "Your transfer has been queued.`r`nIf the transfer goes through you should receive an email to your NGRN mailbox in 20 minutes." -Parentformwidth $($form.Width)
+        }
+
+        Clear-TreeView -treeView $form.Controls["Tree1"]
+
+        if ($script:TransferMode -eq 'Cyber') {
+            Set-UploadRoot
+        }
+    }
+
+    # Attach the click event to the button
+    $transferButton.Add_Click({
+        # ---------------------------------------------------------------
+        # Look for any node that has been marked as an error
+        # ---------------------------------------------------------------
+        $hasError = $false
+        foreach ($root in $treeView.Nodes) {
+            $stack = [System.Collections.Stack]::new()
+            $stack.Push($root)
+            while ($stack.Count -gt 0) {
+                $node = $stack.Pop()
+                if ($node.ImageKey -eq 'Error') {
+                    $hasError = $true
+                    break
+                }
+                foreach ($child in $node.Nodes) { $stack.Push($child) }
+            }
+            if ($hasError) { break }
+        }
+
+        # ---------------------------------------------------------------
+        # If the Cyber checkbox is ticked, force the Cyber path
+        # ---------------------------------------------------------------
+        if ($checkboxNATS.Checked) {
+            # prevent Cyber if any Unknown nodes are present
+            $unknownNodes = Get-UnknownExtensionNodes -TreeView $treeView
+            if ($unknownNodes.Count -gt 0) {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "One or more files have extensions that are not approved for any transfer (red X icon). These files must be removed and go through the respective program ISSO/ISSM.",
+                    "Transfer blocked",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error)
+                return # abort the Cyber path
+            }
+
+            $script:TransferMode = 'Cyber'
+            $script:strNetworkPath = $script:CyberRoot
+            btnSubmit_OnClick
+            return
+        }
+
+        # ---------------------------------------------------------------
+        # Existing logic – show the two‑option dialog when errors exist
+        # ---------------------------------------------------------------
+        if ($hasError) {
+
+            # ----- Stop Cyber if Unknown nodes are present -----
+            $unknownNodes = Get-UnknownExtensionNodes -TreeView $treeView
+            if ($unknownNodes.Count -gt 0) {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "One or more files have extensions that are not approved for any transfer (red X icon). These files must be removed and go through the respective program ISSO/ISSM.",
+                    "Transfer blocked",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error)
+                return
+            }
+        }
+        else {
+            # -----------------------------------------------------------
+            # No error nodes – just run the normal transfer
+            # -----------------------------------------------------------
+            Set-UploadRoot
+            btnSubmit_OnClick
+        }
+})
+
+# Function to check if a node with the same path already exists
+function NodeExists {
+    param ($parent, $path)
+
+    # Handle both TreeView and TreeNode parents
+    $nodes = if ($parent -is [System.Windows.Forms.TreeView]) {
+        $parent.Nodes
+    } else {
+        $parent.Nodes
+    }
+
+    foreach ($node in $nodes) {
+        if ($node.Name -eq $path) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Add-NodeToTreeView {
+    param ($ParentNode, $path)
+    
+    # Determine if the provided path is a directory or a file
+    if ((Test-Path -LiteralPath $path -PathType Container)) {
+        # Add the node to the TreeView, checking if it's the root level
+        if ($ParentNode) {
+            if (NodeExists -parent $ParentNode -path $path) {
+                return
+            }
+            $childNode = $ParentNode.Nodes.Add($path, $path)
+        } else {
+            if (NodeExists -parent $treeView -path $path) {
+                return
+            }
+            $childNode = $treeView.Nodes.Add($path, $path)
+        }
+
+        # Get child items of the current path
+        try {
+            $childItems = Get-ChildItem -LiteralPath $path -ErrorAction Stop
+        }
+        catch {
+            Write-Host "Unable to get child items from path: $path"
+            return
+        }
+        
+        foreach ($item in $childItems) {
+            if ($item.PSIsContainer) {
+                # If item is a folder, set folder icon and recursively add child nodes
+                $childNode.ImageKey = "Folder"
+                $childNode.SelectedImageKey = "Folder"
+                Add-NodeToTreeView -ParentNode $childNode -path $item.FullName
+            } else {
+                # If item is a file, add it as a leaf node and set appropriate icons
+                if (NodeExists -parent $childNode -path $item.FullName) {
+                    continue
+                }
+                $LeafNode = $childNode.Nodes.Add($item.FullName, $item.FullName)
+
+                # Get validation result and set appropriate icons based on validation messages
+                $validationResult = Get-FileValidationMessages -FileName $item.FullName
+
+                if ($validationResult.ValidationMessages.Type -contains 'Error') {
+                    # This is the generic error (ID 10) → unknown extension
+                    $LeafNode.ImageKey = 'Error'          # red‑X
+                    $LeafNode.SelectedImageKey = 'Error'
+                    $LeafNode.Tag = 'Unknown'            # mark as unknown
+                }
+                elseif ($validationResult.ValidationMessages.Type -contains 'Warning') {
+                    $LeafNode.ImageKey = 'Warning'
+                    $LeafNode.SelectedImageKey = 'Warning'
+                }
+                elseif ($validationResult.ValidationMessages.Type -contains 'Cyber') {
+                    # Cyber‑only extensions – show the warning icon (as requested)
+                    $LeafNode.ImageKey = 'CyberOnly'
+                    $LeafNode.SelectedImageKey = 'CyberOnly'
+                    $LeafNode.Tag = 'CyberOnly'
+                }
+                else {
+                    # Regular allowed files – keep the existing extension‑specific icon
+                    $iconInList = AddTreeNodeIcon -Path $path
+                    if ($iconInList) {
+                        $extKey = ([IO.Path]::GetExtension($item.FullName)).Trim('.').ToLower()
+                        $LeafNode.ImageKey = $extKey
+                        $LeafNode.SelectedImageKey = $extKey
+                    }
+                    else {
+                        $LeafNode.ImageKey = 'DefaultFile'
+                        $LeafNode.SelectedImageKey = 'DefaultFile'
+                    }
+                }
+
+                # Set tooltip text with validation messages
+                $ErrorChar = [char]0x274c
+                $WarningChar = ([char]0x26A0)
+                $CyberChar = [char]::ConvertFromUtf32(0x1F6E1)
+
+                $messages = ""
+                foreach ($ValidationMessage in $validationResult.ValidationMessages) {
+                    if ($messages) {
+                        $messages += "`n"
+                    }
+                    
+                    switch ($ValidationMessage.Type) {
+                        'Error'   { $messages += $ErrorChar   + "$($ValidationMessage.Message)" }
+                        'Warning' { $messages += $WarningChar + "$($ValidationMessage.Message)" }
+                        'Cyber'   { $messages += $CyberChar   + "$($ValidationMessage.Message)" }
+                        default   { $messages += "$($ValidationMessage.Message)" }
+                    }
+                }
+                $LeafNode.ToolTipText = $messages
+            }
+        }
+    } else {
+        # Add a single file node if it's passed in directly
+        if ($ParentNode) {
+            if (NodeExists -parent $ParentNode -path $path) {
+                return
+            }
+            $LeafNode = $ParentNode.Nodes.Add($path, $path)
+        } else {
+            if (NodeExists -parent $treeView -path $path) {
+                return
+            }
+            $LeafNode = $treeView.Nodes.Add($path, $path)
+        }
+
+        # Get validation result and set appropriate icons based on validation messages
+        $validationResult = Get-FileValidationMessages -FileName $path
+        
+        if ($validationResult.ValidationMessages.Type -contains 'Error') {
+            # Unknown extension – red X
+            $LeafNode.ImageKey = 'Error'
+            $LeafNode.SelectedImageKey = 'Error'
+            $LeafNode.Tag = 'Unknown'
+        }
+        elseif ($validationResult.ValidationMessages.Type -contains 'Warning') {
+            # Regular warning (e.g. a known “dangerous” extension)
+            $LeafNode.ImageKey = 'Warning'
+            $LeafNode.SelectedImageKey = 'Warning'
+        }
+        elseif ($validationResult.ValidationMessages.Type -contains 'Cyber') {
+            # Cyber‑only - show the warning icon and tag it
+            $LeafNode.ImageKey = 'CyberOnly'          # yellow‑exclamation
+            $LeafNode.SelectedImageKey = 'CyberOnly'
+            $LeafNode.Tag = 'CyberOnly'
+        }
+        else {
+            # Regular allowed file – keep the per‑extension icon
+            $iconInList = AddTreeNodeIcon -Path $path
+            if ($iconInList) {
+                $extKey = ([IO.Path]::GetExtension($path)).Trim('.').ToLower()
+                $LeafNode.ImageKey = $extKey
+                $LeafNode.SelectedImageKey = $extKey
+            }
+            else {
+                $LeafNode.ImageKey = 'DefaultFile'
+                $LeafNode.SelectedImageKey = 'DefaultFile'
+            }
+        }
+
+        # Set tooltip text with validation messages
+        $ErrorChar = [char]0x274c
+        $WarningChar = ([char]0x26A0)
+        $CyberChar = [char]::ConvertFromUtf32(0x1F6E1)
+
+        $messages = ""
+        foreach ($ValidationMessage in $validationResult.ValidationMessages) {
+            if ($ValidationMessage.type -eq "Error") {
+                $messages += $ErrorChar + "$($ValidationMessage.message)`n"
+            } elseif ($ValidationMessage.type -eq "Warning") {
+                $messages += $WarningChar + "$($ValidationMessage.message)`n"
+            } elseif ($ValidationMessage.type -eq "Cyber") {
+                $messages += $CyberChar + "$($ValidationMessage.message)`n"
+            }
+        }
+        $LeafNode.ToolTipText = $messages
+    }
+}
+    
+    # Enable drag and drop functionality
+    $form.AllowDrop = $true
+    $treeView.AllowDrop = $true
+    
+    # Define event handlers for drag and drop operations
+    $form.Add_DragEnter({
+        param ($sender, $e)
+        if ($e.Data.GetDataPresent([Windows.Forms.DataFormats]::FileDrop)) {
+            $e.Effect = [Windows.Forms.DragDropEffects]::Copy
+        } else {
+            $e.Effect = [Windows.Forms.DragDropEffects]::None
+        }
+    })
+    
+
+    $treeView.Add_DragEnter({
+        param ($sender, $e)
+        if ($e.Data.GetDataPresent([Windows.Forms.DataFormats]::FileDrop)) {
+            $e.Effect = [Windows.Forms.DragDropEffects]::Copy
+        } else {
+            $e.Effect = [Windows.Forms.DragDropEffects]::None
+        }
+    })
+    
+# Add DragDrop event handler for TreeView
+$treeView.Add_DragDrop({
+    param ($sender, $e)
+    
+    # Get the files that were dropped
+    $files = $e.Data.GetData([Windows.Forms.DataFormats]::FileDrop)
+
+    # Determine the drop target node
+    $targetPoint = $treeView.PointToClient([System.Drawing.Point]::new($e.X, $e.Y))
+    $targetNode = $treeView.GetNodeAt($targetPoint)
+
+    foreach ($file in $files) {
+        # Check if the targetNode is a leaf node (i.e., it has no child nodes)
+        if ($targetNode -and $targetNode.Nodes.Count -eq 0) {
+            # If the targetNode is a leaf node, use its parent as the target node
+            $node = $targetNode.Parent
+        } else {
+            # Otherwise, use the targetNode itself
+            $node = $targetNode
+        }
+
+        # Add the nodes starting at the identified target node
+        Add-NodeToTreeView -path $file -ParentNode $node
+    }
+})
+
+    # Show the form
+    $form.ShowDialog()
+}
+
+Function Get-SpecialCaseFileValidationMessages {
+    param (
+       [string]$FileName,
+       [string]$FileExtension
+   )
+   $ReturnCollection = @()
+   Switch ($FileExtension){
+    { $_ -imatch '\.(pptx|docx)$' } {
+        #Use a function to read inside the pptx to get filenames and extensions
+        $imageInfo = Get-OfficeDotXEmbeddedImages -OfficeXFileName $FileName -FileExtension $FileExtension
+
+        foreach ($docimage in $imageInfo) {
+
+            # Validate embedded image
+            $imageValidationResult = Get-FileValidationMessages -FileName $docimage.ImageFileName
+
+            foreach ($validationMessage in $imageValidationResult.ValidationMessages) {
+
+                # Only flag problematic embedded files
+                if ($validationMessage.Type -eq 'Error' -or
+                    $validationMessage.Type -eq 'Cyber') {
+
+                    $modifiedMessage = [PSCustomObject]@{
+                        ID      = $validationMessage.ID
+                        Type    = $validationMessage.Type
+                        Action  = $validationMessage.Action
+                        Message = "This PPTX/DOCX file contains an embedded image that is not allowed: $($docimage.ImageFileName)"
+                    }
+
+                    $ReturnCollection += $modifiedMessage
+                }
+            }
+        }
+
+
+    }
+   }
+   
+   return $ReturnCollection
+   
+}
+
+function Get-FileValidationMessages {
+    param ( [string]$FileName )
+
+    $allowedFileTypesPath = Join-Path $PSScriptRoot 'AllowedFileTypes.csv'
+    $messagesPath        = Join-Path $PSScriptRoot 'Messages.csv'
+
+    # Check for allowed CSV paths
+    If (-not (Test-Path $allowedFileTypesPath)){
+        write-error "Cannot access $allowedFileTypesPath"
+        $form.Close()
+    }
+    If (-not (Test-Path $messagesPath)){
+        write-error "Cannot access $messagesPath"
+        $form.Close()
+    }
+
+
+    $fileExtension = [IO.Path]::GetExtension($FileName).ToLower()
+    $class = Get-ExtensionClassification -Extension $fileExtension
+
+    switch ($class) {
+        'Regular' {
+            $match = $allowedFileTypes |
+                Where-Object { $_.Extension -split ';' -contains $fileExtension }
+
+            $ids = @($match.Message -split ';')
+
+            $validationMessages = @(
+                $messages |
+                Where-Object { $ids -contains $_.ID } |
+                Select-Object ID, Type, Action, Message
+            )
+        }
+
+        'Cyber' {
+            $validationMessages = @(
+                $messages |
+                Where-Object { $_.ID -eq '70' } |
+                Select-Object ID, Type, Action, Message
+            )
+        }
+
+        'Unknown' {
+            $validationMessages = @(
+                $messages |
+                Where-Object { $_.ID -eq '10' } |
+                Select-Object ID, Type, Action, Message
+            )
+        }
+    }
+
+    # Preserve any special‑case handling (PPTX/DOCX etc.)
+    $special = Get-SpecialCaseFileValidationMessages -FileName $FileName -FileExtension $fileExtension
+    if ($special) {
+        $validationMessages = @($validationMessages) + @($special)
+    }
+
+
+    return [pscustomobject]@{
+        FileName          = $FileName
+        ValidationMessages = $validationMessages
+    }
+}
+
+
+# Function to show the warning message
+function Show-WarningMessage {
+    param (
+        [string]$message,
+        [int] $Parentformwidth
+    )
+
+    $labelHorizontalPadding = 10
+    $labelVerticalPadding = 20
+    $maxFormWidth = $Parentformwidth - 10  # Maximum width with some padding
+
+    # Create the form
+    $warningForm = New-Object System.Windows.Forms.Form
+    $warningForm.Text = "Warning"
+    $warningForm.StartPosition = "CenterParent"
+    $warningForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $warningForm.MaximizeBox = $false
+    $warningForm.MinimizeBox = $false
+    $warningForm.SizeGripStyle = [System.Windows.Forms.SizeGripStyle]::Hide
+    $warningForm.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 248, 220)  # Light yellow background
+
+    # Create a label for the warning icon
+    $iconLabel = New-Object System.Windows.Forms.Label
+    $iconLabel.Text = [char]0x26A0  # Unicode warning symbol
+    $iconLabel.Font = New-Object System.Drawing.Font([System.Drawing.FontFamily]::GenericSansSerif, 24)
+    $iconLabel.AutoSize = $true
+    $iconLabel.Location = New-Object System.Drawing.Point(10, 20)
+    
+    # Create a temporary graphics object to measure string size
+    $graphics = [System.Drawing.Graphics]::FromImage([System.Drawing.Bitmap]::new(1, 1))
+    $warningLabelFont = New-Object System.Drawing.Font([System.Drawing.FontFamily]::GenericSansSerif, 12)
+    $maxLabelWidth = $maxFormWidth - 40 - $iconLabel.Width - $labelHorizontalPadding 
+
+    $sizeF = $graphics.MeasureString($message, $warningLabelFont, ($maxLabelWidth -120))
+    $labelSize = [System.Drawing.Size]::new([Math]::Ceiling($sizeF.Width), [Math]::Ceiling($sizeF.Height) + 10)
+
+    # Create a RichTextBox for the warning message
+    $warningLabel = New-Object System.Windows.Forms.RichTextBox
+    $warningLabel.Text = $message
+    $warningLabel.ReadOnly = $true
+    $warningLabel.ScrollBars = "Vertical"
+    $warningLabel.BorderStyle = 'None'
+    $warningLabel.Font = $warningLabelFont
+    $warningLabel.WordWrap = $true
+    $warningLabel.Multiline = $true
+    $warningLabel.AutoSize = $false
+    $warningLabel.DetectUrls = $false # stop cyber url from resolving
+    $warningLabel.Size = $labelSize
+    $warningLabel.Location = New-Object System.Drawing.Point(($($iconLabel.Location.X) + $($iconLabel.Width) + $labelHorizontalPadding -50), 20)
+    
+    # Create the proceed button
+    $proceedButton = New-Object System.Windows.Forms.Button
+    $proceedButton.Text = "Proceed"
+    $proceedButton.Size = New-Object System.Drawing.Size(75, 23)
+    
+    $proceedButton.Add_Click({ $warningForm.Close() })
+
+    # Add controls to form
+    $warningForm.Controls.Add($iconLabel)
+    $warningForm.Controls.Add($warningLabel)
+    $warningForm.Controls.Add($proceedButton)
+
+    # Adjust the form size
+    $formWidth = [Math]::Max($labelSize.Width + $iconLabel.Width + 40, 400)
+    $formHeight = $labelSize.Height + $proceedButton.Height + $labelVerticalPadding * 3
+    $warningForm.ClientSize = [System.Drawing.Size]::new($formWidth, $formHeight)
+
+    # Center proceed button
+    $proceedButton.Left = ($warningForm.ClientSize.Width - $proceedButton.Width) / 2
+    $proceedButton.Top = $warningLabel.Bottom + 10
+
+    $warningForm.ShowDialog()
+}
+
+function Show-InputBox {
+    # Create the form
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "User Detail Input"
+    $form.Size = New-Object System.Drawing.Size(400, 250)
+    $form.StartPosition = "CenterScreen"
+
+    # Create labels
+    $labels = @("Employee ID:", "First Name:", "Last Name:")
+    $labelControls = @()
+    for ($i = 0; $i -lt $labels.Length; $i++) {
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = $labels[$i]
+        $label.AutoSize = $true
+        $label.Top = 20 + ($i * 50)
+        $label.Left = 10
+        $labelControls += $label
+        $form.Controls.Add($label)
+    }
+
+    # Create text boxes
+    $textBoxes = @()
+    for ($i = 0; $i -lt $labels.Length; $i++) {
+        $textBox = New-Object System.Windows.Forms.TextBox
+        $textBox.Top = 20 + ($i * 50)
+        $textBox.Left = 130
+        $textBox.Width = 220
+        $textBoxes += $textBox
+        $form.Controls.Add($textBox)
+    }
+
+    # Create OK button
+    $okButton = New-Object System.Windows.Forms.Button
+    $okButton.Text = "OK"
+    $okButton.Top = 170
+    $okButton.Left = 250
+    $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $form.Controls.Add($okButton)
+    $form.AcceptButton = $okButton
+
+    # Show form and get result
+    $result = $form.ShowDialog()
+
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $textBoxes | ForEach-Object { $_.Text }
+    }
+
+    return @()
+}
+
+function AddTreeNodeIcon {
+    param (
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        Write-Warning "AddTreeNodeIcon received empty path"
+        return $false
+    }
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Warning "Path does not exist: $Path"
+        return $false
+    }
+
+    $fileExtension = ([System.IO.Path]::GetExtension($Path)).Trim('.').ToLower()
+
+    $treeView = $form.Controls["tree1"]
+
+    # Check if icon already exists
+    $found = $treeView.ImageList.Images.Keys.Contains($fileExtension)
+
+    if (-not $found) {
+        try {
+            $fileIconImage = [System.Drawing.Icon]::ExtractAssociatedIcon($Path)
+
+            if ($fileIconImage) {
+                $imageList.Images.Add($fileExtension, $fileIconImage)
+                return $true
+            }
+        }
+        catch {
+            Write-Warning "Failed to extract icon for: $Path"
+            Write-Warning $_
+        }
+
+        return $false
+    }
+
+    return $true
+}
+
+function Copy-TreeViewItem {
+    param (
+        [Parameter(Mandatory)]
+        [System.Windows.Forms.TreeNode]$node,
+        [Parameter(Mandatory)]
+        [string]$destinationPath,
+        [Parameter(Mandatory)]
+        [ref]$fileInfoList
+    )
+    
+    if ($node.Tag -eq 'Unknown') {
+        # Write-Host "Skipping unknown-extension node: $($node.FullPath)"
+        return
+    }
+
+    # Construct the full destination path for the current node
+    $currentPath = Join-Path -Path $destinationPath -ChildPath (Split-Path $node.FullPath -Leaf)
+    
+    # Check if the node is a directory or file
+    if (Test-Path $node.Text -PathType Container) {
+        # Directory case
+        $dirname = Split-Path $currentPath -Leaf
+        Write-Host "Create Dir: $dirname in $currentPath"
+        New-Item -ItemType Directory -Force -Path $currentPath
+        
+        # Recursively copy child nodes
+        foreach ($childNode in $node.Nodes) {
+            Copy-TreeViewItem -node $childNode -destinationPath $currentPath -fileInfoList $fileInfoList
+        }
+    } elseif (Test-Path $node.Text -PathType Leaf) {
+        # File case
+        $FileTransferTime = Measure-Command {
+            Copy-Item -Path $node.Text -Destination $currentPath -Force
+        }
+        Write-Host "File: $($node.Text) Destination: $currentPath"
+        
+        # Get file information and add to the collection
+        $fileInfo = Get-Item $node.Text
+        $fileInfoList.Value.Add([PSCustomObject]@{
+            
+            FullPath = $currentPath
+            FileName = $fileInfo.Name
+            FileSize_KB = [math]::Round($fileInfo.Length / 1KB, 2) # Size in KB, rounded to 2 decimal places
+            FileTransferTime = [math]::Round($FileTransferTime.TotalSeconds,2) #round transfter time to 2 decimal places
+        })
+    } else {
+        Write-Warning "Node $($node.Text) does not exist as file or directory"
+    }
+}
+
+function Write-FileInfoList {
+    param (
+        [Parameter(Mandatory)]
+        [System.Collections.Generic.List[PSCustomObject]]$fileInfoList
+    )
+
+    # -----------------------------------------------------------------
+    # Helper: try to parse a folder name that looks like userid_lastname_firstname_yyyy-MM-dd-HHmmss
+    # Returns a hashtable with the parsed parts or $null if it cannot parse.
+    # -----------------------------------------------------------------
+    function Parse-TransferFolderName {
+        param ( [string]$FolderName )
+
+        # Expected pattern – use a regex so we can be strict but tolerant
+        $pattern = '^([^_]+)_([^_]+)_([^_]+)_([0-9]{4})-([0-9]{2})-([0-9]{2})-([0-9]{6})$'
+        $m = [regex]::Match($FolderName,$pattern)
+
+        if (-not $m.Success) { return $null }
+
+        return @{
+            UserID = $m.Groups[1].Value
+            LastName = $m.Groups[2].Value
+            FirstName = $m.Groups[3].Value
+            Year = $m.Groups[4].Value
+            Month = $m.Groups[5].Value
+            Day = $m.Groups[6].Value
+            TimeStamp = $m.Groups[7].Value   # HHmmss
+        }
+    }
+
+    $fileInfoListExtended = @()
+
+    foreach ($Entry in $fileInfoList) {
+        # -----------------------------------------------------------------
+        # Extract just the *leaf* folder name (the one that contains the
+        # userid_lastname_firstname_… string)
+        # -----------------------------------------------------------------
+        $leafFolder = Split-Path -Leaf (Split-Path -Parent $Entry.FullPath)
+
+        $parsed = Parse-TransferFolderName -FolderName $leafFolder
+
+        if (-not $parsed) {
+            # ---------------------------------------------------------
+            # If we cannot parse the folder name we either:
+            #   skip the entry (quietly) OR
+            #   write a row with placeholder values to know something went wrong.
+            # Here we choose to write a row with “UNKNOWN” placeholders.
+            # ---------------------------------------------------------
+            $fileInfoListExtended += [pscustomobject]@{
+                username = 'UNKNOWN'
+                Lastname = 'UNKNOWN'
+                Firstname = 'UNKNOWN'
+                FileName = $Entry.FileName
+                FileSize_KB = $Entry.FileSize_KB
+                FileDate = 'UNKNOWN'
+                FileTime = 'UNKNOWN'
+                Timezone = (Get-TimeZone).BaseUtcOffset.ToString()
+                TransferTime_seconds = $Entry.FileTransferTime
+            }
+            continue   # go to the next entry
+        }
+
+        # -----------------------------------------------------------------
+        # Build proper DateTime objects from the captured parts
+        # -----------------------------------------------------------------
+        try {
+            $fileDate = Get-Date -Year  $parsed.Year -Month $parsed.Month -Day   $parsed.Day -Hour  0 -Minute 0 -Second 0
+        } catch {
+            # If Get-Date fails (should not happen with the regex) fall back
+            $fileDate = $null
+        }
+
+        # The timestamp part is HHmmss – split it manually
+        $hh = $parsed.TimeStamp.Substring(0,2)
+        $mm = $parsed.TimeStamp.Substring(2,2)
+        $ss = $parsed.TimeStamp.Substring(4,2)
+
+        try {
+            $fileTime = Get-Date -Hour $hh -Minute $mm -Second $ss
+        } catch {
+            $fileTime = $null
+        }
+
+        # -----------------------------------------------------------------
+        # Add the enriched row to the CSV collection
+        # -----------------------------------------------------------------
+        $fileInfoListExtended += [pscustomobject]@{
+            username = $parsed.UserID
+            Lastname = $parsed.LastName
+            Firstname = $parsed.FirstName
+            FileName = $Entry.FileName
+            FileSize_KB = $Entry.FileSize_KB
+            FileDate = if ($fileDate)   { $fileDate.ToString('MM/dd/yyyy') } else { 'UNKNOWN' }
+            FileTime = if ($fileTime)   { $fileTime.ToString('HH:mm:ss') } else { 'UNKNOWN' }
+            Timezone = (Get-TimeZone).BaseUtcOffset.ToString()
+            TransferTime_seconds = $Entry.FileTransferTime
+        }
+    }
+
+    # -----------------------------------------------------------------
+    # Write (or append) the CSV
+    # -----------------------------------------------------------------
+    $csvPath = Join-Path $FileLogPath $FileLogName
+
+    if (Test-Path $csvPath) {
+        # Append, but keep the header only once
+        $fileInfoListExtended | Export-Csv -Path $csvPath -NoTypeInformation -Append
+    } else {
+        $fileInfoListExtended | Export-Csv -Path $csvPath -NoTypeInformation
+    }
+
+    Write-Host "Transfer log written to $csvPath"
+}
+
+function Copy-TreeViewData {
+    param (
+        [Parameter(Mandatory)]
+        [System.Windows.Forms.TreeView]$treeView,
+
+        [Parameter(Mandatory)]
+        [string]$strFolder,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$bolWriteLog = $false
+    )
+    
+    # Initialize the list for collecting file information
+    $fileInfoList = New-Object System.Collections.Generic.List[PSCustomObject]
+    foreach ($rootNode in $treeView.Nodes) {
+        Copy-TreeViewItem -node $rootNode -destinationPath $strFolder -fileInfoList ([ref]$fileInfoList)
+     }
+    if ($bolWriteLog){
+        Write-FileInfoList -fileInfoList $fileInfoList
+    }
+}
+
+function Clear-TreeView {
+    param (
+        [System.Windows.Forms.TreeView]$treeView
+    )
+    $treeView.Nodes.Clear()
+}
+function Ensure-ZipFileType {
+    # Check if the compression assembly type exists
+    if (-not ([Type]::GetType("System.IO.Compression.ZipFile", $false))) {
+        # Try to load the assembly
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+        } catch {
+            Write-Error "Failed to load the assembly: $_"
+            return $false
+        }
+    }
+    return $true
+}
+function Get-OfficeDotXEmbeddedImages {
+    # This is a special case that we can check for.  PPTX contains compressed images that could be a disallowed image type.  This function will
+    # Return an object collection with the filenames and the file extensions so we can run it though the extension validation.
+    param (
+        [string]$OfficeXFileName,
+        [string]$FileExtension
+    )
+
+    # Ensure the provided file exists and is a Office X file
+    if (-not (Test-Path $OfficeXFileName)) {
+        throw "The file '$OfficeXFileName' does not exist."
+    }
+    
+    if ($OfficeXFileName -notlike "*$FileExtension") {
+        throw "The file '$OfficeXFileName' is not a Office X file."
+    }
+
+    # Create a temporary directory to extract the PPTX file
+    $tempFolderPath = Join-Path $Env:Temp $(New-Guid)
+    New-Item -Type Directory -Path $tempFolderPath | out-null
+    $tempDir = get-item -Path $tempFolderPath
+
+    try {
+        if (Ensure-ZipFileType) {
+            # Extract the Office X file (which is essentially a zip file)
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($OfficeXFileName, $tempDir.FullName)
+        } else {
+            return "Compression assembly not avaliable"
+        }
+
+        # Initialize an array to hold custom objects for image details
+        $imageDetails = @()
+
+        # Path to the media folder
+        switch ($FileExtension){
+            ".PPTX" {
+                $mediaPath = Join-Path $tempDir.FullName 'ppt/media'
+            }
+            ".DOCX" {
+                $mediaPath = Join-Path $tempDir.FullName 'word/media'
+            }
+        }
+
+        # Check if the media folder exists
+        if (Test-Path $mediaPath) {
+            # Get all image files in the media folder
+            $imageFiles = Get-ChildItem -Path $mediaPath -File
+
+            foreach ($imageFile in $imageFiles) {
+                # Create custom object for each image
+                $imageDetail = [PSCustomObject]@{
+                    ImageFileName = $imageFile.FullName
+                    ImageExtension = $imageFile.Extension
+                }
+                $imageDetails += $imageDetail
+            }
+        }
+
+        # Return the array of image details
+        return $imageDetails
+    
+    } finally {
+        # Clean up the temporary directory
+        try {
+            Remove-Item -Path $tempDir.FullName -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Host "Failed cleaning temp folder: $($tempDir.FullName)"
+        }
+    }
+
+
+}
+
+function Remove-UnapprovedNodes {
+    param ( [System.Windows.Forms.TreeView]$TreeView )
+
+    # Recursive inner function
+    function Remove-BadNodeRecursive {
+        param ( [System.Windows.Forms.TreeNode]$Node )
+        # Process children first – otherwise we lose the reference when we delete the parent
+        foreach ($child in @($Node.Nodes)) {
+            Remove-BadNodeRecursive -Node $child
+        }
+        # If this node is flagged as an error -> delete it
+        if ($Node.ImageKey -eq 'Error') {
+            $Node.Remove()
+        }
+    }
+
+    foreach ($root in @($TreeView.Nodes)) {
+        Remove-BadNodeRecursive -Node $root
+    }
+}
+
+function Set-UploadRoot {
+    # Puts the base folder back to the regular Uploads share
+    $script:strNetworkPath = $script:UploadsRoot
+    $script:TransferMode = 'Normal'
+}
+
+function Get-UnknownExtensionNodes {
+    param ( [System.Windows.Forms.TreeView]$TreeView )
+    $unknown = @()
+    foreach ($root in $TreeView.Nodes) {
+        $stack = [System.Collections.Stack]::new()
+        $stack.Push($root)
+        while ($stack.Count -gt 0) {
+            $node = $stack.Pop()
+            if ($node.Tag -eq 'Unknown') { $unknown += $node }
+            foreach ($child in $node.Nodes) { $stack.Push($child) }
+        }
+    }
+    return $unknown
+}
+
+$Global:CyberAllowed = @{}
+function Load-CyberWhitelist {
+    param (
+        # Path to the saved CSV
+        [string]$Path = "$PSScriptRoot\file extention whitelist reference 2022.csv"
+    )
+    if (-not (Test-Path $Path)) {
+        Write-Warning "Cyber whitelist CSV not found at $Path"
+        return
+    }
+    Write-Host "Loading cyber-allowed extensions..."
+    Write-Host "=============================================================="
+
+    # Import‑Csv will treat the first row as a header; if the file has no header we force one.
+    $header = "File Extention"
+    $rows = Import-Csv -Path $Path | Select-Object -Property $header  
+    foreach ($row in $rows) {
+        $ext = $row.$header.Trim()
+        if ([string]::IsNullOrWhiteSpace($ext) -or $ext.StartsWith('#')) { continue }
+        if (-not $ext.StartsWith('.')) { $ext = ".$ext" }
+        $ext = $ext.ToLower()
+        write-host "$ext"
+        $Global:CyberAllowed[$ext] = $true
+    }
+    Write-Host "=============================================================="
+    Write-Host "Loaded $($Global:CyberAllowed.Count) cyber-allowed extensions."
+}
+# Load cyber whitelist
+Load-CyberWhitelist
+
+function Get-ExtensionClassification {
+    param ( 
+        [string]$Extension # e.g. ".pdf"
+    )   
+
+    $ext = $Extension.ToLower()
+
+    # Regular list – read from the existing AllowedFileTypes.csv
+    $inRegular = $script:AllowedFileTypes |
+        Where-Object { $_.Extension -split ';' -contains $ext } |
+        Measure-Object | Select-Object -ExpandProperty Count
+
+    if ($inRegular) { return 'Regular' }
+
+    # Cyber list – our hash table
+    if ($Global:CyberAllowed.ContainsKey($ext)) { return 'Cyber' }
+
+    # Not found anywhere
+    return 'Unknown'
+}
+
+function Get-CyberOnlyNodes {
+    param ( [System.Windows.Forms.TreeView]$TreeView )
+    $list = @()
+    foreach ($root in $TreeView.Nodes) {
+        $stack = [System.Collections.Stack]::new()
+        $stack.Push($root)
+        while ($stack.Count -gt 0) {
+            $node = $stack.Pop()
+            if ($node.Tag -eq 'CyberOnly') { $list += $node }
+            foreach ($child in $node.Nodes) { $stack.Push($child) }
+            
+        }
+    }
+    return $list
+}
+
+
+# Call the function to display the drag and drop window
+Show-DragAndDropWindow

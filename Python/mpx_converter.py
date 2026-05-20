@@ -1,17 +1,20 @@
-import pathlib
+from pathlib import Path
 from tkinter import messagebox as mb
 
 import yt_dlp as youtube_dl
 import customtkinter as CTK
-from customtkinter import *
 from customtkinter import filedialog as fd
 
 import yaml
 
+# Media type constants
+MP3 = 'mp3'
+MP4 = 'mp4'
+
 ###########################################################################################################################
 ###########################################################################################################################
 
-class youTube(CTK.CTk):
+class YouTube(CTK.CTk):
 
     ###########################################################################################################################
 
@@ -25,27 +28,27 @@ class youTube(CTK.CTk):
         self.title('Python youtube download app')
 
         self.yamlLabel = CTK.CTkLabel(self,text='Media Yaml file')
-        self.yamlLabel.grid(row=0,column=0,sticky=NSEW)
+        self.yamlLabel.grid(row=0,column=0,sticky=CTK.NSEW)
 
-        self.yamlString = CTK.StringVar(value=pathlib.Path(__file__).parent.parent / 'yaml' / 'mpx.yml')
+        self.yamlString = CTK.StringVar(value=str(Path(__file__).parent.parent / 'yaml' / 'mpx.yml'))
         self.yaml = CTK.CTkEntry(self, textvariable=self.yamlString,state='disabled',width=300)
-        self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=NSEW)
+        self.yaml.grid(row=0,column=1,pady=12,padx=10,sticky=CTK.NSEW)
 
         self.yamlButton = CTK.CTkButton(self,text='Select file',text_color='red',command=lambda: self.fileLocation(self.yaml))
-        self.yamlButton.grid(row=0,column=2,pady=12,padx=10,sticky=NSEW)
+        self.yamlButton.grid(row=0,column=2,pady=12,padx=10,sticky=CTK.NSEW)
 
         self.pathLabel = CTK.CTkLabel(self,text='Output Path')
-        self.pathLabel.grid(row=1,column=0,sticky=NSEW)
+        self.pathLabel.grid(row=1,column=0,sticky=CTK.NSEW)
 
-        self.outputPathString = CTK.StringVar(value=pathlib.Path.cwd())
+        self.outputPathString = CTK.StringVar(value=str(Path.cwd()))
         self.outputPath = CTK.CTkEntry(self, textvariable=self.outputPathString,state='disabled',width=300)
-        self.outputPath.grid(row=1,column=1,pady=12,padx=10,sticky=NSEW)
+        self.outputPath.grid(row=1,column=1,pady=12,padx=10,sticky=CTK.NSEW)
 
         self.pathButton = CTK.CTkButton(self,text='Select file',text_color='red',command=lambda: self.getPath(self.outputPath))
-        self.pathButton.grid(row=1,column=2,pady=12,padx=10,sticky=NSEW)
+        self.pathButton.grid(row=1,column=2,pady=12,padx=10,sticky=CTK.NSEW)
 
         self.processButton = CTK.CTkButton(self,text='Process',command = lambda:self.read())
-        self.processButton.grid(row=2,column=1,sticky=NSEW,pady=(0,5))
+        self.processButton.grid(row=2,column=1,sticky=CTK.NSEW,pady=(0,5))
 
         self.rowconfigure(0,weight=1)
         self.rowconfigure(1,weight=1)
@@ -84,35 +87,37 @@ class youTube(CTK.CTk):
             entry.configure(state='disabled')
 
     ###########################################################################################################################
-
-    def read(self):
+# C:\Users\Victor2021\Pictures\
+    def read(self, output_path=None):
         self.yamlFile = self.yaml.get()
 
         if self.yamlFile=='':
             mb.showerror(title='Error!',message='Yaml file not selected. Please select Yaml file before processing.')
             return       
+        if output_path:
+            self.saveLocation = output_path
+        else:
+            self.saveLocation = Path(self.outputPathString.get())
 
-        self.saveLocation = self.outputPathString.get().replace('\\','/')
+        if not self.saveLocation.exists():
+            print(f"Output path does not exist: {self.saveLocation}")
+            return
 
-        if len(self.yamlFile)==0:
-            print('No yaml input. Trying default path.')
-            self.yamlFile = pathlib.Path.cwd() / 'yaml' / 'mpx.yml'
-    
         with open(self.yamlFile,'r') as yf:
             self.data = yaml.safe_load(yf)
         
         for media_type in self.data:
             for link in self.data[media_type]:
-                if link and (media_type=='mp3'):
+                if link and (media_type == MP3):
                     try:
                         self.download_ytvid_as_mp3(link)
-                    except:
-                        print(link+' mp3 download failed')
-                elif link and (media_type=='mp4'):
+                    except Exception as e:
+                        print(f"{link} mp3 download failed: {e}")
+                elif link and (media_type == MP4):
                     try:
                         self.download_ytvid_as_mp4(link)
-                    except:
-                        print(link+' mp4 download failed')
+                    except Exception as e:
+                        print(f"{link} mp4 download failed: {e}")
                         
     
         self.cleanup()
@@ -123,10 +128,11 @@ class youTube(CTK.CTk):
     def download_ytvid_as_mp3(self,video_url):
         video_info = youtube_dl.YoutubeDL().extract_info(url = video_url,download=False)
         filename = f"{video_info['title']}.mp3".replace('/',' ').replace('\"','').replace('#','')
+        output_path = str(Path(self.saveLocation) / filename)
         options={
             'format':'bestaudio/best',
             'keepvideo':False,
-            'outtmpl':self.saveLocation+'/'+filename,
+            'outtmpl':output_path,
         }
         with youtube_dl.YoutubeDL(options) as ydl:
             ydl.download([video_info['webpage_url']])
@@ -151,8 +157,8 @@ class youTube(CTK.CTk):
     ###########################################################################################################################
 
     def cleanup(self):
-        self.data['mp3'] = [None for i in range(len(self.data['mp3']))]
-        self.data['mp4'] = [None for i in range(len(self.data['mp4']))]
+        self.data[MP3] = [None for i in range(len(self.data[MP3]))]
+        self.data[MP4] = [None for i in range(len(self.data[MP4]))]
 
         yaml.SafeDumper.add_representer(
             type(None),
@@ -163,6 +169,5 @@ class youTube(CTK.CTk):
                 yaml.safe_dump(self.data, f,default_flow_style=False)
 
 if __name__ == '__main__':
-    app = youTube()
-    # app.mainloop()
+    app = YouTube()
     app.read()
