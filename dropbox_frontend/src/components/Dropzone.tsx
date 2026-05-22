@@ -2,9 +2,12 @@ import { useDropzone } from 'react-dropzone'
 
 import { useUploadStore } from '../store/uploadStore'
 
-import type { UploadFile } from '../types/upload'
 
-import { validateFile } from '../utils/mockValidation'
+import {
+  createSession,
+  uploadFile,
+  getSession,
+} from '../api/uploadApi'
 
 declare module 'react' {
   interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
@@ -22,17 +25,53 @@ export function Dropzone() {
     (state) => state.setFiles,
   )
 
-  const onDrop = (acceptedFiles: File[]) => {
-    const mapped: UploadFile[] =
-      acceptedFiles.map((file) => ({
-        id: randomId(),
-        file,
-        relativePath:
-          file.webkitRelativePath || file.name,
-        validation: validateFile(file.name),
-      }))
+  const setSessionId =
+    useUploadStore(
+      (state) =>
+        state.setSessionId,
+  )
 
-    setFiles(mapped)
+  const setLoading =
+    useUploadStore(
+      (state) =>
+        state.setLoading,
+  )
+
+
+  const onDrop = async (
+    acceptedFiles: File[],
+  ) => {
+    try {
+      setLoading(true)
+
+      const session =
+        await createSession()
+
+      setSessionId(session.id)
+
+      for (const file of acceptedFiles) {
+        const relativePath =
+          file.webkitRelativePath ||
+          file.name
+
+        await uploadFile(
+          session.id,
+          file,
+          relativePath,
+        )
+      }
+
+      const hydratedSession =
+        await getSession(session.id)
+
+      setFiles(
+        hydratedSession.files,
+      )
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const {

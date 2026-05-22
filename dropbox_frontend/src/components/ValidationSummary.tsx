@@ -1,7 +1,7 @@
-import type { UploadFile } from '../types/upload'
+import type { UploadRecord } from '../types/upload'
 
 interface Props {
-  files: UploadFile[]
+  files: UploadRecord[]
 }
 
 export function ValidationSummary({
@@ -14,7 +14,7 @@ export function ValidationSummary({
   }
 
   for (const file of files) {
-    const state = file.validation[0].type
+    const state = file.validationState
     summary[state] += 1
   }
 

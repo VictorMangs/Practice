@@ -15,6 +15,11 @@ function App() {
     (state) => state.clearFiles,
   )
 
+  const loading =
+  useUploadStore(
+    (state) => state.loading,
+  )
+
   const tree = buildFileTree(files)
 
   return (
@@ -32,6 +37,12 @@ function App() {
         </div>
 
         <Dropzone />
+
+        {loading && (
+          <div className="rounded bg-blue-600 p-4">
+            Uploading files...
+          </div>
+        )}
 
         <div className="flex justify-end">
           <button

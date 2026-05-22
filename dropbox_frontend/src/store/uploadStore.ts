@@ -1,32 +1,61 @@
 import { create } from 'zustand'
 
 import type {
-  TreeNode,
-  UploadFile,
+  UploadRecord,
 } from '../types/upload'
 
 interface UploadStore {
-  files: UploadFile[]
-  tree: TreeNode[]
+  sessionId: string | null
 
-  setFiles: (files: UploadFile[]) => void
+  files: UploadRecord[]
+
+  loading: boolean
+
+  setSessionId: (
+    sessionId: string,
+  ) => void
+
+  setFiles: (
+    files: UploadRecord[],
+  ) => void
+
+  setLoading: (
+    loading: boolean,
+  ) => void
 
   clearFiles: () => void
 }
 
 export const useUploadStore =
   create<UploadStore>((set) => ({
+    sessionId: null,
+
     files: [],
-    tree: [],
+
+    loading: false,
+
+    setSessionId: (
+      sessionId,
+    ) =>
+      set(() => ({
+        sessionId,
+      })),
 
     setFiles: (files) =>
       set(() => ({
         files,
       })),
 
+    setLoading: (
+      loading,
+    ) =>
+      set(() => ({
+        loading,
+      })),
+
     clearFiles: () =>
       set(() => ({
+        sessionId: null,
         files: [],
-        tree: [],
       })),
   }))

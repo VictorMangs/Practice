@@ -1,6 +1,6 @@
 import type {
   TreeNode,
-  UploadFile,
+  UploadRecord,
   ValidationState,
 } from '../types/upload'
 
@@ -24,7 +24,7 @@ function getWorstValidation(
 }
 
 export function buildFileTree(
-  files: UploadFile[],
+  files: UploadRecord[],
 ): TreeNode[] {
   const root: TreeNode[] = []
 
@@ -59,7 +59,7 @@ export function buildFileTree(
 
       if (isFile) {
         existing.validation =
-          uploadFile.validation[0].type
+          uploadFile.validationState
       }
 
       if (!isFile && existing.children) {

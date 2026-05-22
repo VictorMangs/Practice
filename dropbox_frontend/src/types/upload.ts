@@ -3,22 +3,42 @@ export type ValidationState =
   | 'cyber'
   | 'blocked'
 
-export interface ValidationMessage {
-  type: ValidationState
-  message: string
+export interface UploadRecord {
+  id: string
+
+  sessionId: string
+
+  originalName: string
+
+  relativePath: string
+
+  extension: string
+
+  storedPath: string
+
+  validationState: ValidationState
+
+  validationMessage: string
+
+  createdAt: string
 }
 
-export interface UploadFile {
+export interface UploadSession {
   id: string
-  file: File
-  relativePath: string
-  validation: ValidationMessage[]
+
+  createdAt: string
+
+  files: UploadRecord[]
 }
 
 export interface TreeNode {
   name: string
+
   path: string
+
   type: 'file' | 'folder'
+
   validation?: ValidationState
+
   children?: TreeNode[]
 }

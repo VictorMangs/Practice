@@ -3,3 +3,5 @@ target/
 __pycache__/
 *.py[cod]
 c_code
+*.db
+*.sql
