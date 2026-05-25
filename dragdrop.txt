@@ -35,9 +35,9 @@
 Add-Type -AssemblyName System.Windows.Forms
 $scriptPath = Join-Path $PSScriptRoot 'Get-Filetype.ps1'
 . $scriptPath
-$script:FileLogPath = "\\NATS.northgrum.com\DropBox\Public\Transfer_Tool\log"
+$script:FileLogPath = "\\NetworkShare\DropBox\Public\Transfer_Tool\log"
 $script:FileLogName = "TransferLog.csv"
-$script:UploadsRoot = "\\NATS.northgrum.com\DropBox\Public\Uploads"
+$script:UploadsRoot = "\\NetworkShare\DropBox\Public\Uploads"
 $script:CyberRoot = "\\Share01\sp\Restricted_Cybersecurity\Public\File Transfer\Transfer Requests"
 $script:strNetworkPath = $script:UploadsRoot # Default to uploads root
 $script:BaseRoot = Split-Path -Parent $script:strNetworkPath
